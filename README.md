@@ -1,3 +1,6 @@
+> [!WARNING]
+> This project is under development and is not yet ready for use. Expect frequent breaking changes until the `1.0.0` release.
+
 <p align="center">
   <img src="assets/icon.png" alt="Mirroid" width="128" />
 </p>
