@@ -15,20 +15,17 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            goos: windows
-            goarch: amd64
+            target: windows
             artifact: mirroid-windows-amd64.exe
-            binary: mirroid.exe
+            output: Mirroid.exe
           - os: ubuntu-latest
-            goos: linux
-            goarch: amd64
-            artifact: mirroid-linux-amd64
-            binary: mirroid
+            target: linux
+            artifact: mirroid-linux-amd64.tar.xz
+            output: Mirroid.tar.xz
           - os: macos-latest
-            goos: darwin
-            goarch: arm64
-            artifact: mirroid-macos-arm64
-            binary: mirroid
+            target: darwin
+            artifact: mirroid-macos-arm64.zip
+            output: Mirroid.app
 
     runs-on: ${{ matrix.os }}
 
@@ -41,22 +38,29 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install Fyne CLI
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+
       - name: Install Linux dependencies
-        if: matrix.goos == 'linux'
+        if: matrix.target == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxkbcommon-dev
 
-      - name: Build
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 1
-        run: go build -trimpath -ldflags="-s -w" -o ${{ matrix.binary }} .
+      - name: Package
+        run: fyne package --target ${{ matrix.target }} --release
 
-      - name: Rename artifact
-        run: |
-          mv ${{ matrix.binary }} ${{ matrix.artifact }}
+      - name: Rename artifact (Windows)
+        if: matrix.target == 'windows'
+        run: mv "${{ matrix.output }}" "${{ matrix.artifact }}"
+
+      - name: Rename artifact (Linux)
+        if: matrix.target == 'linux'
+        run: mv "${{ matrix.output }}" "${{ matrix.artifact }}"
+
+      - name: Zip app bundle (macOS)
+        if: matrix.target == 'darwin'
+        run: zip -r "${{ matrix.artifact }}" "${{ matrix.output }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
