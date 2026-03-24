@@ -85,8 +85,6 @@ jobs:
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
-          git_user_signingkey: true
-          git_tag_gpgsign: true
 
       - name: Sign artifacts
         run: |
