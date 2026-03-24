@@ -41,7 +41,7 @@ Tired of typing out long scrcpy commands in the terminal. Wanted a simple way to
 
 ## Installation
 
-Currently, there are no pre-built binaries available. Stay tuned for future releases in the [Releases](https://github.com/EverythingSucks/Mirroid/releases) section.
+Check the [Releases](https://github.com/EverythingSuckz/Mirroid/releases) section for pre-built binaries.
 
 ## Building
 
