@@ -475,11 +475,6 @@ func (dp *DevicePanel) updateList() {
 				}
 			}
 
-			if dp.app.autoOpenedPairingWindow != nil {
-				dp.app.autoOpenedPairingWindow.Close()
-				dp.app.autoOpenedPairingWindow = nil
-			}
-
 			dp.app.setConnectedLayout(true)
 		} else {
 			dp.mu.Lock()

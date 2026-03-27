@@ -41,8 +41,6 @@ type App struct {
 	presetsPanel            *PresetsPanel
 	logsPanel               *LogsPanel
 	deviceInfoPanel         *DeviceInfoPanel
-	autoOpenedPairingWindow fyne.Window // only set when auto-opened at first boot
-
 	// layout states: empty (no devices) vs connected (has devices)
 	emptyState     fyne.CanvasObject
 	connectedState fyne.CanvasObject
@@ -188,16 +186,7 @@ func (a *App) Run() {
 		a.runner.StopAll()
 	})
 
-	go func() {
-		devices, err := a.adbClient.GetDevices()
-		if err != nil || len(devices) == 0 {
-			fyne.Do(func() {
-				a.autoOpenedPairingWindow = ShowPairingWindow(a)
-			})
-		} else {
-			a.devicePanel.refreshDevices()
-		}
-	}()
+	go a.devicePanel.refreshDevices()
 
 	if a.debug {
 		slog.Debug("debug mode: opening logs panel")
