@@ -6,8 +6,10 @@ import (
 
 	"fyne.io/fyne/v2/test"
 
+	"mirroid/internal/adb"
 	"mirroid/internal/config"
 	"mirroid/internal/model"
+	"mirroid/internal/scrcpy"
 )
 
 func TestOptionsPanelBuild(t *testing.T) {
@@ -192,8 +194,10 @@ func TestDevicePanelBuild(t *testing.T) {
 		fyneApp: a,
 		window:  a.NewWindow("Test"),
 		options: model.DefaultOptions(),
+		runner:  scrcpy.NewRunner(""),
 	}
 	app.logsPanel = NewLogsPanel()
+	app.deviceInfoPanel = NewDeviceInfoPanel(app)
 
 	dp := NewDevicePanel(app)
 	if dp == nil {
@@ -201,6 +205,66 @@ func TestDevicePanelBuild(t *testing.T) {
 	}
 	if dp.app != app {
 		t.Error("DevicePanel.app not set correctly")
+	}
+
+	obj := dp.Build()
+	if obj == nil {
+		t.Fatal("DevicePanel.Build() returned nil")
+	}
+
+	// No devices — SelectedDevice should return empty
+	if got := dp.SelectedDevice(); got != "" {
+		t.Errorf("SelectedDevice with no devices: got %q, want empty", got)
+	}
+
+	// No devices — SelectedDevices should return empty
+	if got := dp.SelectedDevices(); len(got) != 0 {
+		t.Errorf("SelectedDevices with no devices: got %v, want empty", got)
+	}
+}
+
+func TestDevicePanelMultiSelect(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+
+	app := &App{
+		fyneApp: a,
+		window:  a.NewWindow("Test"),
+		options: model.DefaultOptions(),
+		runner:  scrcpy.NewRunner(""),
+	}
+	app.logsPanel = NewLogsPanel()
+	app.deviceInfoPanel = NewDeviceInfoPanel(app)
+
+	dp := NewDevicePanel(app)
+	dp.Build()
+
+	// Inject test devices and check two of them
+	dp.mu.Lock()
+	dp.devices = []adb.Device{
+		{Serial: "192.168.1.5:5555", Model: "Pixel_7", Source: "wireless"},
+		{Serial: "ABCD1234", Model: "Galaxy_S24", Source: "usb"},
+	}
+	dp.checkedSerials["192.168.1.5:5555"] = true
+	dp.checkedSerials["ABCD1234"] = true
+	dp.mu.Unlock()
+
+	got := dp.SelectedDevices()
+	if len(got) != 2 {
+		t.Errorf("SelectedDevices: got %d serials, want 2", len(got))
+	}
+
+	// Uncheck one
+	dp.mu.Lock()
+	delete(dp.checkedSerials, "ABCD1234")
+	dp.mu.Unlock()
+
+	got = dp.SelectedDevices()
+	if len(got) != 1 {
+		t.Errorf("SelectedDevices after uncheck: got %d serials, want 1", len(got))
+	}
+	if len(got) == 1 && got[0] != "192.168.1.5:5555" {
+		t.Errorf("SelectedDevices: got %q, want 192.168.1.5:5555", got[0])
 	}
 }
 

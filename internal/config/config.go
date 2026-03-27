@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"mirroid/internal/adb"
 	"mirroid/internal/model"
 )
 
@@ -62,6 +63,10 @@ func (c *Config) presetsPath() string {
 	return filepath.Join(c.dir, "presets.json")
 }
 
+func (c *Config) devicesPath() string {
+	return filepath.Join(c.dir, "devices.json")
+}
+
 // SaveAppConfig persists the current app config to disk.
 func (c *Config) SaveAppConfig() error {
 	data, err := json.MarshalIndent(c.AppConf, "", "    ")
@@ -95,4 +100,29 @@ func (c *Config) SavePresets(presets map[string]model.ScrcpyOptions) error {
 		return err
 	}
 	return os.WriteFile(c.presetsPath(), data, 0o644)
+}
+
+// LoadKnownDevices reads the persisted known devices list from disk.
+func (c *Config) LoadKnownDevices() ([]adb.Device, error) {
+	var devices []adb.Device
+	data, err := os.ReadFile(c.devicesPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return devices, nil
+		}
+		return nil, fmt.Errorf("config: could not read devices: %w", err)
+	}
+	if err := json.Unmarshal(data, &devices); err != nil {
+		return nil, fmt.Errorf("config: devices file is corrupt: %w", err)
+	}
+	return devices, nil
+}
+
+// SaveKnownDevices writes the known devices list to disk.
+func (c *Config) SaveKnownDevices(devices []adb.Device) error {
+	data, err := json.MarshalIndent(devices, "", "    ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(c.devicesPath(), data, 0o644)
 }

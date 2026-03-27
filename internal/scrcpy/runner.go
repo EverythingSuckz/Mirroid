@@ -21,6 +21,10 @@ type Runner struct {
 	scrcpyPath string
 	mu         sync.Mutex
 	processes  []*Process
+
+	// OnStateChange is called after the process list changes (launch, exit).
+	// The serial of the affected device is passed as argument.
+	OnStateChange func(serial string)
 }
 
 // NewRunner creates a scrcpy runner.
@@ -59,6 +63,10 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 	r.processes = append(r.processes, proc)
 	r.mu.Unlock()
 
+	if r.OnStateChange != nil {
+		r.OnStateChange(serial)
+	}
+
 	// read output in a goroutine
 	go func() {
 		scanner := bufio.NewScanner(stdout)
@@ -82,6 +90,10 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 			}
 		}
 		r.mu.Unlock()
+
+		if r.OnStateChange != nil {
+			r.OnStateChange(serial)
+		}
 	}()
 
 	return nil
@@ -115,9 +127,39 @@ func (r *Runner) StopAll() {
 	}
 }
 
+// StopFor terminates scrcpy processes for a specific device serial.
+func (r *Runner) StopFor(serial string) {
+	r.mu.Lock()
+	var toKill []*Process
+	for _, p := range r.processes {
+		if p.serial == serial {
+			toKill = append(toKill, p)
+		}
+	}
+	r.mu.Unlock()
+
+	for _, proc := range toKill {
+		if proc.cmd.Process != nil {
+			_ = proc.cmd.Process.Kill()
+		}
+	}
+}
+
 // RunningCount returns the number of running scrcpy processes.
 func (r *Runner) RunningCount() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.processes)
+}
+
+// IsRunningFor returns true if scrcpy is currently running for the given serial.
+func (r *Runner) IsRunningFor(serial string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, p := range r.processes {
+		if p.serial == serial {
+			return true
+		}
+	}
+	return false
 }

@@ -7,11 +7,13 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
+	fynetooltip "github.com/dweymouth/fyne-tooltip"
 
 	"mirroid/internal/adb"
 	"mirroid/internal/config"
@@ -31,7 +33,6 @@ type App struct {
 	debug      bool
 
 	// addresses explicitly disconnected by the user --mDNS won't auto-reconnect these.
-	// cleared on manual pair or app restart.
 	ignoredAddrs map[string]bool
 
 	// ui panels
@@ -41,6 +42,11 @@ type App struct {
 	logsPanel               *LogsPanel
 	deviceInfoPanel         *DeviceInfoPanel
 	autoOpenedPairingWindow fyne.Window // only set when auto-opened at first boot
+
+	// layout states: empty (no devices) vs connected (has devices)
+	emptyState     fyne.CanvasObject
+	connectedState fyne.CanvasObject
+	rootContainer  *fyne.Container
 }
 
 // NewApp creates and configures the application.
@@ -71,6 +77,15 @@ func NewApp(debug bool) *App {
 	a.presetsPanel = NewPresetsPanel(a)
 	a.deviceInfoPanel = NewDeviceInfoPanel(a)
 
+	// Wire reactive state updates: when a scrcpy process starts or exits,
+	// refresh the device table's Status column and the info panel's buttons.
+	a.runner.OnStateChange = func(serial string) {
+		fyne.Do(func() {
+			a.devicePanel.deviceList.Refresh()
+		})
+		a.deviceInfoPanel.RefreshActions()
+	}
+
 	return a
 }
 
@@ -99,35 +114,66 @@ func (a *App) Run() {
 	mainMenu := fyne.NewMainMenu(deviceMenu, logsMenu)
 	a.window.SetMainMenu(mainMenu)
 
-	deviceSection := widget.NewCard("Device", "", a.devicePanel.Build())
+	// Empty state
+	emptyIcon := canvas.NewImageFromResource(theme.ComputerIcon())
+	emptyIcon.FillMode = canvas.ImageFillContain
+	emptyIcon.SetMinSize(fyne.NewSize(96, 96))
+
+	emptyTitle := canvas.NewText("No devices found", theme.Color(theme.ColorNameForeground))
+	emptyTitle.TextSize = 24
+	emptyTitle.TextStyle = fyne.TextStyle{Bold: true}
+	emptyTitle.Alignment = fyne.TextAlignCenter
+
+	emptySubtitle := widget.NewLabelWithStyle(
+		"Connect a device via USB or pair wirelessly to get started.",
+		fyne.TextAlignCenter, fyne.TextStyle{})
+
+	pairBtn := widget.NewButton("Pair New Device", func() {
+		ShowPairingWindow(a)
+	})
+	pairBtn.Importance = widget.HighImportance
+
+	refreshBtn := widget.NewButton("Refresh", func() {
+		go a.devicePanel.refreshDevices()
+	})
+	refreshBtn.Importance = widget.MediumImportance
+
+	a.emptyState = container.NewCenter(
+		container.NewVBox(
+			container.NewCenter(emptyIcon),
+			container.NewCenter(emptyTitle),
+			container.NewCenter(emptySubtitle),
+			widget.NewSeparator(),
+			container.NewCenter(container.NewHBox(pairBtn, refreshBtn)),
+		),
+	)
+
+	// Connected state
+	deviceSection := widget.NewCard("Devices", "", a.devicePanel.Build())
 	optionsSection := widget.NewCard("Options", "", a.optionsPanel.Build())
 	presetsSection := widget.NewCard("Presets", "", a.presetsPanel.Build())
 
-	launchBtn := widget.NewButtonWithIcon("Launch scrcpy", theme.MediaPlayIcon(), a.onLaunch)
-	launchBtn.Importance = widget.HighImportance
-
-	stopBtn := widget.NewButtonWithIcon("Stop All", theme.MediaStopIcon(), a.onStopAll)
-	stopBtn.Importance = widget.DangerImportance
-
-	cmdBtn := widget.NewButtonWithIcon("Preview Command", theme.DocumentIcon(), a.onShowCommand)
-
-	buttons := container.NewGridWithColumns(3, launchBtn, stopBtn, cmdBtn)
-
-	leftPanel := container.NewVScroll(container.NewVBox(
-		deviceSection,
+	topArea := deviceSection
+	bottomArea := container.NewVScroll(container.NewVBox(
 		optionsSection,
 		presetsSection,
-		layout.NewSpacer(),
-		widget.NewSeparator(),
-		container.NewPadded(buttons),
 	))
+
+	leftSplit := container.NewVSplit(topArea, bottomArea)
+	leftSplit.SetOffset(0.35)
+	leftPanel := leftSplit
 
 	rightPanel := a.deviceInfoPanel.Build()
 
 	split := container.NewHSplit(leftPanel, rightPanel)
 	split.SetOffset(0.5)
 
-	a.window.SetContent(split)
+	a.connectedState = split
+	a.connectedState.Hide()
+
+	// Root: stack with both states, toggle visibility
+	a.rootContainer = container.NewStack(a.emptyState, a.connectedState)
+	a.window.SetContent(fynetooltip.AddWindowToolTipLayer(a.rootContainer, a.window.Canvas()))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	a.mdnsCancel = cancel
@@ -135,7 +181,6 @@ func (a *App) Run() {
 		a.devicePanel.OnMdnsDevices(devices)
 	})
 
-	//auto-refresh device list every 3 seconds
 	go a.autoRefreshDevices(ctx)
 
 	a.window.SetOnClosed(func() {
@@ -147,7 +192,6 @@ func (a *App) Run() {
 		devices, err := a.adbClient.GetDevices()
 		if err != nil || len(devices) == 0 {
 			fyne.Do(func() {
-				// track this as auto-opened so it gets auto-closed when a device connects
 				a.autoOpenedPairingWindow = ShowPairingWindow(a)
 			})
 		} else {
@@ -155,11 +199,9 @@ func (a *App) Run() {
 		}
 	}()
 
-	// auto-open logs panel in debug mode
 	if a.debug {
 		slog.Debug("debug mode: opening logs panel")
 		go func() {
-			// small delay to let the main window render first
 			time.Sleep(200 * time.Millisecond)
 			fyne.Do(func() {
 				a.logsPanel.ShowWindow()
@@ -168,6 +210,20 @@ func (a *App) Run() {
 	}
 
 	a.window.ShowAndRun()
+}
+
+// setConnectedLayout toggles between empty state and connected (split) layout.
+func (a *App) setConnectedLayout(connected bool) {
+	if a.emptyState == nil || a.connectedState == nil {
+		return
+	}
+	if connected {
+		a.emptyState.Hide()
+		a.connectedState.Show()
+	} else {
+		a.connectedState.Hide()
+		a.emptyState.Show()
+	}
 }
 
 // autoRefreshDevices polls adb devices every 3 seconds.
@@ -185,38 +241,53 @@ func (a *App) autoRefreshDevices(ctx context.Context) {
 	}
 }
 
-// onShowCommand shows the scrcpy command in a dialog with copy.
+// onShowCommand shows the scrcpy command(s) in a dialog with copy.
+// If multiple devices are checked, shows all commands; otherwise shows the highlighted device.
 func (a *App) onShowCommand() {
-	device := a.devicePanel.SelectedDevice()
-	if device == "" {
+	a.optionsPanel.SyncToModel(&a.options)
+
+	// Collect devices: use checked if any, else the highlighted device
+	devices := a.devicePanel.SelectedDevices()
+	if len(devices) == 0 {
+		if d := a.devicePanel.SelectedDevice(); d != "" {
+			devices = []string{d}
+		}
+	}
+	if len(devices) == 0 {
 		dialog.ShowInformation("No Device", "Select a device first.", a.window)
 		return
 	}
 
-	a.optionsPanel.SyncToModel(&a.options)
-	preview := a.runner.CommandPreview(device, a.options)
+	var lines string
+	for i, d := range devices {
+		if i > 0 {
+			lines += "\n\n"
+		}
+		lines += a.runner.CommandPreview(d, a.options)
+	}
 
 	cmdEntry := widget.NewMultiLineEntry()
-	cmdEntry.SetText(preview)
+	cmdEntry.SetText(lines)
 	cmdEntry.Disable()
-	cmdEntry.SetMinRowsVisible(3)
+	cmdEntry.SetMinRowsVisible(len(devices) * 2)
 
 	copyBtn := widget.NewButtonWithIcon("Copy", theme.ContentCopyIcon(), func() {
-		a.window.Clipboard().SetContent(preview)
+		a.window.Clipboard().SetContent(lines)
 	})
+	copyBtn.Importance = widget.HighImportance
 
-	content := container.NewVBox(cmdEntry, copyBtn)
+	content := container.NewBorder(nil, copyBtn, nil, nil, cmdEntry)
 
 	dlg := dialog.NewCustom("Command Preview", "Close", content, a.window)
-	dlg.Resize(fyne.NewSize(500, 200))
+	dlg.Resize(fyne.NewSize(600, float32(120+len(devices)*60)))
 	dlg.Show()
 }
 
-// onLaunch validates options and starts scrcpy.
+// onLaunch validates options and starts scrcpy for all checked devices.
 func (a *App) onLaunch() {
-	device := a.devicePanel.SelectedDevice()
-	if device == "" {
-		a.logsPanel.Log("[WARN]No device selected")
+	devices := a.devicePanel.SelectedDevices()
+	if len(devices) == 0 {
+		a.logsPanel.Log("[WARN]No devices selected")
 		return
 	}
 
@@ -227,19 +298,16 @@ func (a *App) onLaunch() {
 		return
 	}
 
-	preview := a.runner.CommandPreview(device, a.options)
-	a.logsPanel.Log(">" + preview)
+	for _, device := range devices {
+		preview := a.runner.CommandPreview(device, a.options)
+		a.logsPanel.Log(">" + preview)
 
-	err := a.runner.Launch(device, a.options, func(line string) {
-		a.logsPanel.Log(line)
-	}, "")
-	if err != nil {
-		a.logsPanel.Log("[ERROR]" + err.Error())
+		err := a.runner.Launch(device, a.options, func(line string) {
+			a.logsPanel.Log(line)
+		}, "")
+		if err != nil {
+			a.logsPanel.Log("[ERROR]" + err.Error())
+		}
 	}
 }
 
-// onStopAll terminates all scrcpy processes.
-func (a *App) onStopAll() {
-	a.runner.StopAll()
-	a.logsPanel.Log("Stopped all processes")
-}

@@ -10,9 +10,9 @@ import (
 
 // Device represents a connected Android device.
 type Device struct {
-	Serial string
-	Model  string
-	Source string // "usb", "wireless", "mdns"
+	Serial string `json:"serial"`
+	Model  string `json:"model"`
+	Source string `json:"source"` // "usb", "wireless", "mdns"
 }
 
 // String returns a display-friendly label.

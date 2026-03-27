@@ -22,9 +22,12 @@ import (
 
 // DeviceInfoPanel shows detailed information about the selected device.
 type DeviceInfoPanel struct {
-	app       *App
-	container *fyne.Container
-	activity  *widget.Activity
+	app           *App
+	container     *fyne.Container
+	activity      *widget.Activity
+	currentSerial string         // track which device is displayed
+	mirrorBtn     *widget.Button // stored for reactive state updates
+	stopBtn       *widget.Button // stored for reactive state updates
 }
 
 // NewDeviceInfoPanel creates a new device info panel.
@@ -46,6 +49,9 @@ func (dip *DeviceInfoPanel) Build() fyne.CanvasObject {
 func (dip *DeviceInfoPanel) LoadDeviceInfo(serial string) {
 	if serial == "" {
 		fyne.Do(func() {
+			dip.currentSerial = ""
+			dip.mirrorBtn = nil
+			dip.stopBtn = nil
 			placeholder := widget.NewLabel("Select a device to view info")
 			placeholder.TextStyle = fyne.TextStyle{Italic: true}
 			dip.container.Objects = []fyne.CanvasObject{container.NewCenter(placeholder)}
@@ -55,6 +61,7 @@ func (dip *DeviceInfoPanel) LoadDeviceInfo(serial string) {
 	}
 
 	fyne.Do(func() {
+		dip.currentSerial = serial
 		dip.activity.Start()
 		dip.activity.Show()
 		loading := container.NewCenter(container.NewVBox(
@@ -73,6 +80,23 @@ func (dip *DeviceInfoPanel) LoadDeviceInfo(serial string) {
 			dip.container.Refresh()
 		})
 	}()
+}
+
+// RefreshActions updates only the Mirror/Stop button states without
+// re-fetching device info from ADB. Safe to call from any goroutine.
+func (dip *DeviceInfoPanel) RefreshActions() {
+	fyne.Do(func() {
+		serial := dip.currentSerial
+		if serial == "" || dip.mirrorBtn == nil || dip.stopBtn == nil {
+			return
+		}
+		running := dip.app.runner.IsRunningFor(serial)
+		if running {
+			dip.stopBtn.Enable()
+		} else {
+			dip.stopBtn.Disable()
+		}
+	})
 }
 
 type deviceInfo struct {
@@ -156,28 +180,63 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info deviceInfo) fyne.C
 		widget.NewFormItem("Battery", widget.NewLabel(info.Battery)),
 	)
 
-	disconnectBtn := widget.NewButtonWithIcon("Disconnect", theme.ContentRemoveIcon(), func() {
+	// Primary device actions
+	dip.mirrorBtn = widget.NewButtonWithIcon("Mirror", theme.MediaPlayIcon(), func() {
+		dip.app.optionsPanel.SyncToModel(&dip.app.options)
+		if err := dip.app.options.Validate(); err != nil {
+			dip.app.logsPanel.Log("[WARN]" + err.Error())
+			return
+		}
+		preview := dip.app.runner.CommandPreview(serial, dip.app.options)
+		dip.app.logsPanel.Log(">" + preview)
+		err := dip.app.runner.Launch(serial, dip.app.options, func(line string) {
+			dip.app.logsPanel.Log(line)
+		}, "")
+		if err != nil {
+			dip.app.logsPanel.Log("[ERROR]" + err.Error())
+		}
+		// OnStateChange callback handles deviceList.Refresh() and RefreshActions()
+	})
+	dip.mirrorBtn.Importance = widget.HighImportance
+
+	dip.stopBtn = widget.NewButtonWithIcon("Stop", theme.MediaStopIcon(), func() {
+		dip.app.runner.StopFor(serial)
+		dip.app.logsPanel.Log("Stopped " + serial)
+		// OnStateChange callback handles deviceList.Refresh() and RefreshActions()
+	})
+	dip.stopBtn.Importance = widget.DangerImportance
+	if !dip.app.runner.IsRunningFor(serial) {
+		dip.stopBtn.Disable()
+	}
+
+	disconnectBtn := widget.NewButtonWithIcon("Disconnect", theme.LogoutIcon(), func() {
 		go func() {
+			dip.app.runner.StopFor(serial)
 			if err := dip.app.adbClient.Disconnect(serial); err != nil {
 				dip.app.logsPanel.Log("[ERROR]Disconnect: " + err.Error())
 			} else {
 				dip.app.logsPanel.Log("[OK]Disconnected " + serial)
-				// block by IP so mDNS won't auto-reconnect
+				// Block this device from reconnecting via IP, model name,
+				// and serial (covers mDNS alias serials too).
+				dip.app.ignoredAddrs[serial] = true
 				ip := serial
 				if idx := strings.Index(ip, ":"); idx > 0 {
 					ip = ip[:idx]
 				}
 				dip.app.ignoredAddrs[ip] = true
 
-				// also block the model to prevent ADB mDNS auto-reconnect under a different serial
 				if info.Model != "" {
+					// Store both space and underscore variants
 					dip.app.ignoredAddrs[info.Model] = true
+					dip.app.ignoredAddrs[strings.ReplaceAll(info.Model, " ", "_")] = true
 				}
 
-				// disconnect any remaining entries for the same device (mDNS alias)
+				// Also disconnect any other ADB entries for the same device
+				// (catches mDNS aliases like adb-xxx._adb-tls-connect._tcp)
 				remaining, _ := dip.app.adbClient.GetDevices()
 				for _, d := range remaining {
-					if d.Model == info.Model {
+					if d.Model != "" && (d.Model == info.Model || d.Model == strings.ReplaceAll(info.Model, " ", "_")) {
+						dip.app.ignoredAddrs[d.Serial] = true
 						_ = dip.app.adbClient.Disconnect(d.Serial)
 					}
 				}
@@ -188,6 +247,7 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info deviceInfo) fyne.C
 	})
 	disconnectBtn.Importance = widget.DangerImportance
 
+	// Secondary actions
 	screenshotBtn := widget.NewButtonWithIcon("Screenshot", theme.MediaPhotoIcon(), func() {
 		go dip.takeScreenshot(serial)
 	})
@@ -206,11 +266,12 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info deviceInfo) fyne.C
 		go dip.LoadDeviceInfo(serial)
 	})
 
-	actions := container.NewGridWithColumns(2,
+	primaryActions := container.NewGridWithColumns(3, dip.mirrorBtn, dip.stopBtn, disconnectBtn)
+
+	secondaryActions := container.NewGridWithColumns(3,
 		screenshotBtn,
 		openShellBtn,
 		refreshInfoBtn,
-		disconnectBtn,
 	)
 
 	return container.NewVBox(
@@ -220,7 +281,8 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info deviceInfo) fyne.C
 		form,
 		layout.NewSpacer(),
 		widget.NewSeparator(),
-		actions,
+		primaryActions,
+		secondaryActions,
 	)
 }
 
