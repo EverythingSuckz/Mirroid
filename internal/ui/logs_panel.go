@@ -22,7 +22,37 @@ type LogsPanel struct {
 
 	// live log window references
 	logWin     fyne.Window
-	logContent *widget.RichText
+	logContent *readOnlyEntry
+}
+
+type readOnlyEntry struct {
+	widget.Entry
+}
+
+func newReadOnlyEntry() *readOnlyEntry {
+	e := &readOnlyEntry{}
+	e.MultiLine = true
+	e.Wrapping = fyne.TextWrap(fyne.TextTruncateClip)
+	e.ExtendBaseWidget(e)
+	return e
+}
+
+func (e *readOnlyEntry) TypedRune(_ rune) {}
+
+func (e *readOnlyEntry) TypedKey(ev *fyne.KeyEvent) {
+	switch ev.Name {
+	case fyne.KeyBackspace, fyne.KeyDelete, fyne.KeyReturn, fyne.KeyEnter:
+		return
+	}
+	e.Entry.TypedKey(ev)
+}
+
+func (e *readOnlyEntry) TypedShortcut(s fyne.Shortcut) {
+	switch s.(type) {
+	case *fyne.ShortcutPaste, *fyne.ShortcutCut:
+		return
+	}
+	e.Entry.TypedShortcut(s)
 }
 
 // NewLogsPanel creates a new logs panel.
@@ -78,11 +108,10 @@ func (lp *LogsPanel) ShowWindow() {
 	lp.logWin = lp.app.fyneApp.NewWindow("Logs")
 	lp.logWin.Resize(fyne.NewSize(1000, 450))
 
-	lp.logContent = widget.NewRichText()
-	lp.logContent.Wrapping = fyne.TextWrapOff
+	lp.logContent = newReadOnlyEntry()
+	lp.logContent.TextStyle = fyne.TextStyle{Monospace: true}
+	lp.logContent.SetPlaceHolder("No logs yet...")
 	lp.refreshLogContent()
-
-	scrollContainer := container.NewScroll(lp.logContent)
 
 	copyBtn := widget.NewButtonWithIcon("Copy All", theme.ContentCopyIcon(), func() {
 		lp.logWin.Clipboard().SetContent(lp.GetContent())
@@ -94,7 +123,7 @@ func (lp *LogsPanel) ShowWindow() {
 
 	toolbar := container.NewHBox(copyBtn, clearBtn)
 
-	lp.logWin.SetContent(container.NewBorder(toolbar, nil, nil, nil, scrollContainer))
+	lp.logWin.SetContent(container.NewBorder(toolbar, nil, nil, nil, lp.logContent))
 	lp.logWin.SetOnClosed(func() {
 		lp.logWin = nil
 		lp.logContent = nil
@@ -112,7 +141,7 @@ func (lp *LogsPanel) refreshLogWindow() {
 	})
 }
 
-// refreshLogContent rebuilds the RichText segments with white monospace style.
+// refreshLogContent updates the Entry text and scrolls to the bottom.
 func (lp *LogsPanel) refreshLogContent() {
 	if lp.logContent == nil {
 		return
@@ -123,28 +152,14 @@ func (lp *LogsPanel) refreshLogContent() {
 	copy(lines, lp.logLines)
 	lp.mu.Unlock()
 
-	if len(lines) == 0 {
-		lp.logContent.Segments = []widget.RichTextSegment{
-			&widget.TextSegment{
-				Text: "No logs yet...",
-				Style: widget.RichTextStyle{
-					ColorName: theme.ColorNameDisabled,
-					TextStyle: fyne.TextStyle{Monospace: true},
-				},
-			},
-		}
-	} else {
-		text := strings.Join(lines, "\n")
-		lp.logContent.Segments = []widget.RichTextSegment{
-			&widget.TextSegment{
-				Text: text,
-				Style: widget.RichTextStyle{
-					ColorName: "",
-					Inline:    false,
-					TextStyle: fyne.TextStyle{Monospace: true},
-				},
-			},
-		}
+	text := strings.Join(lines, "\n")
+	lp.logContent.SetText(text)
+
+	// Move cursor to end so the view auto-scrolls to show newest logs
+	if len(lines) > 0 {
+		lastRow := len(lines) - 1
+		lastCol := len(lines[lastRow])
+		lp.logContent.CursorRow = lastRow
+		lp.logContent.CursorColumn = lastCol
 	}
-	lp.logContent.Refresh()
 }
