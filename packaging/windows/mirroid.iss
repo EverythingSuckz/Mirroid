@@ -19,7 +19,6 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 DisableWelcomePage=no
-InfoAfterFile=info_after.txt
 OutputDir=..\..\
 OutputBaseFilename=mirroid-windows-amd64-setup
 SetupIconFile=icon.ico

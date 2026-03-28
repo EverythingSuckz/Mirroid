@@ -1,2 +1,0 @@
-adb and scrcpy are included with this installation.
-No additional setup is required.
