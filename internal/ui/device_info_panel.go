@@ -90,6 +90,10 @@ func (dip *DeviceInfoPanel) LoadDeviceInfo(serial string) {
 	go func() {
 		info := dip.fetchDeviceInfo(serial)
 		fyne.Do(func() {
+			// Discard stale result if user has since selected a different device
+			if dip.currentSerial != serial {
+				return
+			}
 			dip.activity.Stop()
 			dip.container.Objects = []fyne.CanvasObject{dip.buildInfoView(serial, info)}
 			dip.container.Refresh()
