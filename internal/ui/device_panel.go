@@ -159,11 +159,11 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 			if connected {
 				status = "Connected"
 				if dp.app.runner != nil {
-					if dp.app.runner.IsRunningFor(d.Serial) {
-						status = "Mirroring"
-					} else if errMsg := dp.app.runner.LastErrorFor(d.Serial); errMsg != "" {
+					if errMsg := dp.app.runner.LastErrorFor(d.Serial); errMsg != "" {
 						status = "Error"
 						statusTip = errMsg + " (check logs)"
+					} else if dp.app.runner.IsRunningFor(d.Serial) {
+						status = "Mirroring"
 					}
 				}
 			}

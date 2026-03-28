@@ -75,18 +75,24 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 
 	// read output in a goroutine
 	go func() {
-		var lastError string
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			line := scanner.Text()
 			logFn(line)
-			// Detect scrcpy server errors
+			// Detect scrcpy server errors in real-time
 			if strings.Contains(line, "ERROR") {
-				// Extract the error message after "ERROR:"
+				var errMsg string
 				if idx := strings.Index(line, "ERROR:"); idx >= 0 {
-					lastError = strings.TrimSpace(line[idx+len("ERROR:"):])
+					errMsg = strings.TrimSpace(line[idx+len("ERROR:"):])
 				} else {
-					lastError = line
+					errMsg = line
+				}
+				r.mu.Lock()
+				r.failedSerials[serial] = errMsg
+				r.mu.Unlock()
+				// Notify immediately so the table status updates
+				if r.OnStateChange != nil {
+					r.OnStateChange(serial)
 				}
 			}
 		}
@@ -99,16 +105,13 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 			logFn(fmt.Sprintf("[scrcpy] process for %s exited (code %d)", serial, cmd.ProcessState.ExitCode()))
 		}
 
-		// remove from tracked list and record error if any
+		// remove from tracked list
 		r.mu.Lock()
 		for i, p := range r.processes {
 			if p == proc {
 				r.processes = append(r.processes[:i], r.processes[i+1:]...)
 				break
 			}
-		}
-		if lastError != "" {
-			r.failedSerials[serial] = lastError
 		}
 		r.mu.Unlock()
 
