@@ -143,11 +143,7 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 				break
 			}
 		}
-		if r.failedSerials[serial] != "" {
-			r.deviceStates[serial] = StateError
-		} else {
-			delete(r.deviceStates, serial)
-		}
+		delete(r.deviceStates, serial)
 		r.mu.Unlock()
 
 		if r.OnStateChange != nil {
