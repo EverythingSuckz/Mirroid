@@ -550,6 +550,12 @@ func (dp *DevicePanel) refreshDevices() {
 	// Persist known devices to config
 	dp.saveKnownDevices()
 
+	// Auto-clear errors from exited processes so "Error" shows for one
+	// refresh cycle (~3 s) then transitions back to "Connected".
+	if dp.app.runner != nil {
+		dp.app.runner.ClearExitedErrors()
+	}
+
 	dp.updateList()
 
 	// Reload info panel if selected device's connection state changed

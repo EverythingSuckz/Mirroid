@@ -143,7 +143,13 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 				break
 			}
 		}
-		delete(r.deviceStates, serial)
+		// Keep StateError so the UI can show it briefly; it will be
+		// auto-cleared by the next refreshDevices cycle (~3 s).
+		if r.failedSerials[serial] != "" {
+			r.deviceStates[serial] = StateError
+		} else {
+			delete(r.deviceStates, serial)
+		}
 		r.mu.Unlock()
 
 		if r.OnStateChange != nil {
@@ -241,5 +247,26 @@ func (r *Runner) ClearErrorFor(serial string) {
 	delete(r.failedSerials, serial)
 	if r.deviceStates[serial] == StateError {
 		delete(r.deviceStates, serial)
+	}
+}
+
+// ClearExitedErrors clears StateError and failedSerials for devices that
+// no longer have a running process. Called from refreshDevices so errors
+// are visible for one refresh cycle (~3 s) before auto-clearing.
+func (r *Runner) ClearExitedErrors() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Build a set of serials that still have a running process.
+	running := make(map[string]bool, len(r.processes))
+	for _, p := range r.processes {
+		running[p.serial] = true
+	}
+
+	for serial, state := range r.deviceStates {
+		if state == StateError && !running[serial] {
+			delete(r.deviceStates, serial)
+			delete(r.failedSerials, serial)
+		}
 	}
 }
