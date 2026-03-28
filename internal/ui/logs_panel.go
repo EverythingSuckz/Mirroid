@@ -76,12 +76,13 @@ func (lp *LogsPanel) ShowWindow() {
 	}
 
 	lp.logWin = lp.app.fyneApp.NewWindow("Logs")
-	lp.logWin.Resize(fyne.NewSize(700, 450))
+	lp.logWin.Resize(fyne.NewSize(1000, 450))
 
 	lp.logContent = widget.NewRichText()
+	lp.logContent.Wrapping = fyne.TextWrapOff
 	lp.refreshLogContent()
 
-	scrollContainer := container.NewVScroll(lp.logContent)
+	scrollContainer := container.NewScroll(lp.logContent)
 
 	copyBtn := widget.NewButtonWithIcon("Copy All", theme.ContentCopyIcon(), func() {
 		lp.logWin.Clipboard().SetContent(lp.GetContent())
