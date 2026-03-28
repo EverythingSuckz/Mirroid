@@ -27,6 +27,7 @@ type LogsPanel struct {
 
 type readOnlyEntry struct {
 	widget.Entry
+	scroll *container.Scroll
 }
 
 func newReadOnlyEntry() *readOnlyEntry {
@@ -35,6 +36,23 @@ func newReadOnlyEntry() *readOnlyEntry {
 	e.Wrapping = fyne.TextWrap(fyne.TextTruncateClip)
 	e.ExtendBaseWidget(e)
 	return e
+}
+
+func (e *readOnlyEntry) CreateRenderer() fyne.WidgetRenderer {
+	r := e.Entry.CreateRenderer()
+	for _, obj := range r.Objects() {
+		if s, ok := obj.(*container.Scroll); ok {
+			e.scroll = s
+			break
+		}
+	}
+	return r
+}
+
+func (e *readOnlyEntry) scrollToBottom() {
+	if e.scroll != nil {
+		e.scroll.ScrollToBottom()
+	}
 }
 
 func (e *readOnlyEntry) TypedRune(_ rune) {}
@@ -154,12 +172,5 @@ func (lp *LogsPanel) refreshLogContent() {
 
 	text := strings.Join(lines, "\n")
 	lp.logContent.SetText(text)
-
-	// Move cursor to end so the view auto-scrolls to show newest logs
-	if len(lines) > 0 {
-		lastRow := len(lines) - 1
-		lastCol := len(lines[lastRow])
-		lp.logContent.CursorRow = lastRow
-		lp.logContent.CursorColumn = lastCol
-	}
+	lp.logContent.scrollToBottom()
 }
