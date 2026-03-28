@@ -11,7 +11,7 @@ permissions:
 
 env:
   SCRCPY_VERSION: "3.3.4"
-  PLATFORM_TOOLS_VERSION: "35.0.2"
+  PLATFORM_TOOLS_VERSION: "37.0.0"
 
 jobs:
   build:
@@ -51,7 +51,7 @@ jobs:
           mkdir -p _bundled
           case "${{ matrix.target }}" in
             windows)
-              curl -L -o pt.zip "https://dl.google.com/android/repository/platform-tools_r${PLATFORM_TOOLS_VERSION}-windows.zip"
+              curl -L -o pt.zip "https://dl.google.com/android/repository/platform-tools_r${PLATFORM_TOOLS_VERSION}-win.zip"
               unzip -j pt.zip "platform-tools/adb.exe" "platform-tools/AdbWinApi.dll" "platform-tools/AdbWinUsbApi.dll" -d _bundled
               curl -L -o scrcpy.zip "https://github.com/Genymobile/scrcpy/releases/download/v${SCRCPY_VERSION}/scrcpy-win64-v${SCRCPY_VERSION}.zip"
               unzip -j scrcpy.zip -d _bundled
