@@ -18,6 +18,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"mirroid/internal/platform"
+	"mirroid/internal/scrcpy"
 )
 
 // DeviceInfoPanel shows detailed information about the selected device.
@@ -109,10 +110,13 @@ func (dip *DeviceInfoPanel) RefreshActions() {
 		if serial == "" || dip.mirrorBtn == nil || dip.stopBtn == nil {
 			return
 		}
-		running := dip.app.runner.IsRunningFor(serial)
-		if running {
+		state := dip.app.runner.StateFor(serial)
+		switch state {
+		case scrcpy.StateLaunching, scrcpy.StateMirroring:
+			dip.mirrorBtn.Disable()
 			dip.stopBtn.Enable()
-		} else {
+		default:
+			dip.mirrorBtn.Enable()
 			dip.stopBtn.Disable()
 		}
 	})
@@ -224,7 +228,11 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info deviceInfo) fyne.C
 		// OnStateChange callback handles deviceList.Refresh() and RefreshActions()
 	})
 	dip.stopBtn.Importance = widget.DangerImportance
-	if !dip.app.runner.IsRunningFor(serial) {
+	state := dip.app.runner.StateFor(serial)
+	if state == scrcpy.StateLaunching || state == scrcpy.StateMirroring {
+		dip.mirrorBtn.Disable()
+		dip.stopBtn.Enable()
+	} else {
 		dip.stopBtn.Disable()
 	}
 

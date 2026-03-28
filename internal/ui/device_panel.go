@@ -14,6 +14,8 @@ import (
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 
 	"mirroid/internal/adb"
+	"mirroid/internal/model"
+	"mirroid/internal/scrcpy"
 )
 
 // DevicePanel manages device selection via a multi-select table.
@@ -158,18 +160,23 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 			}())
 
 			// Status priority:
-			// Connected:    Error > Mirroring > Connected
+			// Connected:    Error > Launching/Mirroring > Connected
 			// Disconnected: Reconnecting > Error > Disconnected
-			status := "Disconnected"
+			status := model.StatusDisconnected
 			statusTip := ""
 			if connected {
-				status = "Connected"
+				status = model.StatusConnected
 				if dp.app.runner != nil {
-					if errMsg := dp.app.runner.LastErrorFor(d.Serial); errMsg != "" {
-						status = "Error"
-						statusTip = errMsg + " (check logs)"
-					} else if dp.app.runner.IsRunningFor(d.Serial) {
-						status = "Mirroring"
+					switch dp.app.runner.StateFor(d.Serial) {
+					case scrcpy.StateError:
+						status = model.StatusError
+						if errMsg := dp.app.runner.LastErrorFor(d.Serial); errMsg != "" {
+							statusTip = errMsg + " (check logs)"
+						}
+					case scrcpy.StateLaunching:
+						status = model.StatusLaunching
+					case scrcpy.StateMirroring:
+						status = model.StatusMirroring
 					}
 				}
 			} else {
@@ -178,14 +185,14 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 				reconnectErr := dp.reconnectErrors[d.Serial]
 				dp.mu.Unlock()
 				if reconnecting {
-					status = "Reconnecting"
+					status = model.StatusReconnecting
 				} else if reconnectErr != "" {
-					status = "Error"
+					status = model.StatusError
 					statusTip = reconnectErr + " (check logs)"
 				}
 			}
 			statusLbl := cols.Objects[3].(*ttwidget.Label)
-			statusLbl.SetText(status)
+			statusLbl.SetText(string(status))
 			statusLbl.SetToolTip(statusTip)
 
 			serial := d.Serial

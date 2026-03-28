@@ -11,6 +11,16 @@ import (
 	"mirroid/internal/platform"
 )
 
+// ProcessState represents the lifecycle state of a scrcpy process.
+type ProcessState int
+
+const (
+	StateIdle       ProcessState = iota // no process running
+	StateLaunching                      // process started, waiting for video stream
+	StateMirroring                      // video stream confirmed active (Texture: seen)
+	StateError                          // process encountered an error
+)
+
 // Process wraps a running scrcpy instance.
 type Process struct {
 	cmd    *exec.Cmd
@@ -22,6 +32,9 @@ type Runner struct {
 	scrcpyPath string
 	mu         sync.Mutex
 	processes  []*Process
+
+	// deviceStates tracks the current lifecycle state for each device serial.
+	deviceStates map[string]ProcessState
 
 	// failedSerials tracks the last error message for devices whose scrcpy
 	// process exited with an error. Cleared on next successful launch.
@@ -37,7 +50,11 @@ func NewRunner(scrcpyPath string) *Runner {
 	if scrcpyPath == "" {
 		scrcpyPath = "scrcpy"
 	}
-	return &Runner{scrcpyPath: scrcpyPath, failedSerials: make(map[string]string)}
+	return &Runner{
+		scrcpyPath:    scrcpyPath,
+		deviceStates:  make(map[string]ProcessState),
+		failedSerials: make(map[string]string),
+	}
 }
 
 // Launch starts a scrcpy process for the given device and options.
@@ -67,6 +84,7 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 	r.mu.Lock()
 	r.processes = append(r.processes, proc)
 	delete(r.failedSerials, serial) // clear any previous error
+	r.deviceStates[serial] = StateLaunching
 	r.mu.Unlock()
 
 	if r.OnStateChange != nil {
@@ -89,8 +107,20 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 				}
 				r.mu.Lock()
 				r.failedSerials[serial] = errMsg
+				r.deviceStates[serial] = StateError
 				r.mu.Unlock()
 				// Notify immediately so the table status updates
+				if r.OnStateChange != nil {
+					r.OnStateChange(serial)
+				}
+			}
+			// Detect video stream active (scrcpy window opened)
+			if strings.Contains(line, "Texture:") {
+				r.mu.Lock()
+				if r.deviceStates[serial] == StateLaunching || r.deviceStates[serial] == StateError {
+					r.deviceStates[serial] = StateMirroring
+				}
+				r.mu.Unlock()
 				if r.OnStateChange != nil {
 					r.OnStateChange(serial)
 				}
@@ -105,13 +135,18 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 			logFn(fmt.Sprintf("[scrcpy] process for %s exited (code %d)", serial, cmd.ProcessState.ExitCode()))
 		}
 
-		// remove from tracked list
+		// remove from tracked list and transition state
 		r.mu.Lock()
 		for i, p := range r.processes {
 			if p == proc {
 				r.processes = append(r.processes[:i], r.processes[i+1:]...)
 				break
 			}
+		}
+		if r.failedSerials[serial] != "" {
+			r.deviceStates[serial] = StateError
+		} else {
+			delete(r.deviceStates, serial)
 		}
 		r.mu.Unlock()
 
@@ -188,6 +223,14 @@ func (r *Runner) IsRunningFor(serial string) bool {
 	return false
 }
 
+// StateFor returns the current process state for a device serial.
+// Returns StateIdle if no process is tracked.
+func (r *Runner) StateFor(serial string) ProcessState {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.deviceStates[serial]
+}
+
 // LastErrorFor returns the last error message for a device, or empty if none.
 func (r *Runner) LastErrorFor(serial string) string {
 	r.mu.Lock()
@@ -200,4 +243,7 @@ func (r *Runner) ClearErrorFor(serial string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.failedSerials, serial)
+	if r.deviceStates[serial] == StateError {
+		delete(r.deviceStates, serial)
+	}
 }
