@@ -3,6 +3,8 @@ package ui
 import (
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -17,6 +19,7 @@ import (
 
 	"mirroid/internal/adb"
 	"mirroid/internal/config"
+	"mirroid/internal/deps"
 	"mirroid/internal/model"
 	"mirroid/internal/scrcpy"
 )
@@ -66,8 +69,8 @@ func NewApp(debug bool) *App {
 		fyneApp:      fyneApp,
 		window:       fyneApp.NewWindow("Mirroid"),
 		cfg:          cfg,
-		adbClient:    adb.NewClient(cfg.AppConf.ADBPath),
-		runner:       scrcpy.NewRunner(cfg.AppConf.ScrcpyPath),
+		adbClient:    nil,
+		runner:       nil,
 		options:      model.DefaultOptions(),
 		debug:        debug,
 		ignoredAddrs: make(map[string]bool),
@@ -80,15 +83,6 @@ func NewApp(debug bool) *App {
 	a.presetsPanel = NewPresetsPanel(a)
 	a.deviceInfoPanel = NewDeviceInfoPanel(a)
 
-	// Wire reactive state updates: when a scrcpy process starts or exits,
-	// refresh the device table's Status column and the info panel's buttons.
-	a.runner.OnStateChange = func(serial string) {
-		fyne.Do(func() {
-			a.devicePanel.deviceList.Refresh()
-		})
-		a.deviceInfoPanel.RefreshActions()
-	}
-
 	return a
 }
 
@@ -96,6 +90,24 @@ func NewApp(debug bool) *App {
 func (a *App) Run() {
 	a.window.Resize(fyne.NewSize(900, 700))
 
+	appDir := getAppDir()
+	adbR, scrcpyR := deps.DetectAll(appDir, a.cfg.AppConf.ADBPath, a.cfg.AppConf.ScrcpyPath)
+
+	if adbR.Found && scrcpyR.Found {
+		a.initClients(adbR.Path, scrcpyR.Path)
+	} else {
+		a.showMissingDepsDialog(adbR, scrcpyR)
+		adbPath := depFallback(adbR, a.cfg.AppConf.ADBPath, "adb")
+		scrcpyPath := depFallback(scrcpyR, a.cfg.AppConf.ScrcpyPath, "scrcpy")
+		a.initClients(adbPath, scrcpyPath)
+	}
+
+	a.buildMainUI()
+	a.window.ShowAndRun()
+}
+
+// buildMainUI sets up the menu, panels, device refresh goroutines, and window content.
+func (a *App) buildMainUI() {
 	logsMenu := fyne.NewMenu("Logs",
 		fyne.NewMenuItem("View Logs", func() {
 			a.logsPanel.ShowWindow()
@@ -219,8 +231,67 @@ func (a *App) Run() {
 			})
 		}()
 	}
+}
 
-	a.window.ShowAndRun()
+// initClients creates the adb and scrcpy clients with resolved paths and persists them.
+func (a *App) initClients(adbPath, scrcpyPath string) {
+	a.adbClient = adb.NewClient(adbPath)
+	a.runner = scrcpy.NewRunner(scrcpyPath)
+	a.runner.OnStateChange = func(serial string) {
+		fyne.Do(func() {
+			a.devicePanel.deviceList.Refresh()
+		})
+		a.deviceInfoPanel.RefreshActions()
+	}
+
+	a.cfg.AppConf.ADBPath = adbPath
+	a.cfg.AppConf.ScrcpyPath = scrcpyPath
+	_ = a.cfg.SaveAppConfig()
+}
+
+// getAppDir returns the directory containing the running executable.
+func getAppDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "."
+	}
+	exe, err = filepath.EvalSymlinks(exe)
+	if err != nil {
+		return "."
+	}
+	return filepath.Dir(exe)
+}
+
+// depFallback returns the detected path if found, otherwise falls back to the
+// config value, and finally to the bare binary name.
+func depFallback(r deps.DetectResult, configPath, bare string) string {
+	if r.Found {
+		return r.Path
+	}
+	if configPath != "" {
+		return configPath
+	}
+	return bare
+}
+
+// showMissingDepsDialog shows an informational dialog listing missing dependencies.
+func (a *App) showMissingDepsDialog(adbR, scrcpyR deps.DetectResult) {
+	var msg string
+	msg = "Some dependencies could not be found:\n\n"
+	if !adbR.Found {
+		msg += "  • adb — https://developer.android.com/tools/releases/platform-tools\n"
+	}
+	if !scrcpyR.Found {
+		msg += "  • scrcpy — https://github.com/Genymobile/scrcpy/releases\n"
+	}
+	msg += "\nInstall them and add to PATH, or reinstall Mirroid using the full installer."
+
+	content := widget.NewLabel(msg)
+	content.Wrapping = fyne.TextWrapWord
+
+	dlg := dialog.NewCustom("Missing Dependencies", "Close", content, a.window)
+	dlg.Resize(fyne.NewSize(500, 250))
+	dlg.Show()
 }
 
 // setConnectedLayout toggles between empty state and connected (split) layout.

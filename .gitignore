@@ -35,6 +35,9 @@ dist/
 build/
 .venv/
 
+# Bundled dependencies (fetched by packaging/fetch-deps.ps1)
+_bundled/
+
 # Packaging build artifacts
 AppDir/
 deb-root/

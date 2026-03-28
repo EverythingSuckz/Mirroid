@@ -33,6 +33,14 @@ cp "$REPO_ROOT/assets/icon.png" AppDir/mirroid.png
 # Also place desktop file at AppDir root
 cp "$SCRIPT_DIR/mirroid.desktop" AppDir/mirroid.desktop
 
+# Copy bundled dependencies
+BUNDLED_DIR="${3:-$REPO_ROOT/_bundled}"
+if [ -d "$BUNDLED_DIR" ]; then
+    mkdir -p AppDir/usr/lib/mirroid
+    cp "$BUNDLED_DIR"/* AppDir/usr/lib/mirroid/
+    chmod +x AppDir/usr/lib/mirroid/adb AppDir/usr/lib/mirroid/scrcpy 2>/dev/null || true
+fi
+
 # Download linuxdeploy if not present
 if [ ! -f linuxdeploy-x86_64.AppImage ]; then
     echo "Downloading linuxdeploy..."

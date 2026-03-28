@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+env:
+  SCRCPY_VERSION: "3.3.4"
+  PLATFORM_TOOLS_VERSION: "35.0.2"
+
 jobs:
   build:
     strategy:
@@ -41,6 +45,33 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxkbcommon-dev
 
+      - name: Download dependencies
+        shell: bash
+        run: |
+          mkdir -p _bundled
+          case "${{ matrix.target }}" in
+            windows)
+              curl -L -o pt.zip "https://dl.google.com/android/repository/platform-tools_r${PLATFORM_TOOLS_VERSION}-windows.zip"
+              unzip -j pt.zip "platform-tools/adb.exe" "platform-tools/AdbWinApi.dll" "platform-tools/AdbWinUsbApi.dll" -d _bundled
+              curl -L -o scrcpy.zip "https://github.com/Genymobile/scrcpy/releases/download/v${SCRCPY_VERSION}/scrcpy-win64-v${SCRCPY_VERSION}.zip"
+              unzip -j scrcpy.zip -d _bundled
+              ;;
+            linux)
+              curl -L -o pt.zip "https://dl.google.com/android/repository/platform-tools_r${PLATFORM_TOOLS_VERSION}-linux.zip"
+              unzip -j pt.zip "platform-tools/adb" -d _bundled
+              chmod +x _bundled/adb
+              curl -L -o scrcpy.tar.gz "https://github.com/Genymobile/scrcpy/releases/download/v${SCRCPY_VERSION}/scrcpy-linux-x86_64-v${SCRCPY_VERSION}.tar.gz"
+              tar --strip-components=1 -xzf scrcpy.tar.gz -C _bundled
+              ;;
+            darwin)
+              curl -L -o pt.zip "https://dl.google.com/android/repository/platform-tools_r${PLATFORM_TOOLS_VERSION}-darwin.zip"
+              unzip -j pt.zip "platform-tools/adb" -d _bundled
+              chmod +x _bundled/adb
+              curl -L -o scrcpy.tar.gz "https://github.com/Genymobile/scrcpy/releases/download/v${SCRCPY_VERSION}/scrcpy-macos-aarch64-v${SCRCPY_VERSION}.tar.gz"
+              tar --strip-components=1 -xzf scrcpy.tar.gz -C _bundled
+              ;;
+          esac
+
       - name: Package
         run: fyne package --target ${{ matrix.target }} --release
 
@@ -58,6 +89,15 @@ jobs:
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion="${{ github.ref_name }}" packaging\windows\mirroid.iss
 
+      - name: Create portable zip (Windows)
+        if: matrix.target == 'windows'
+        shell: bash
+        run: |
+          mkdir -p _portable
+          cp Mirroid.exe _portable/
+          cp _bundled/* _portable/
+          cd _portable && zip -r ../mirroid-windows-amd64-portable.zip .
+
       - name: Upload raw binary (Windows)
         if: matrix.target == 'windows'
         uses: actions/upload-artifact@v6
@@ -72,10 +112,12 @@ jobs:
           name: mirroid-windows-amd64-setup.exe
           path: mirroid-windows-amd64-setup.exe
 
-      - name: Rename tarball (Linux)
-        if: matrix.target == 'linux'
-        run: |
-          cp Mirroid.tar.xz mirroid-linux-amd64.tar.xz
+      - name: Upload portable zip (Windows)
+        if: matrix.target == 'windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: mirroid-windows-amd64-portable.zip
+          path: mirroid-windows-amd64-portable.zip
 
       - name: Extract binary for packaging (Linux)
         if: matrix.target == 'linux'
@@ -85,6 +127,15 @@ jobs:
           BINARY=$(find _extracted -type f -executable | head -1)
           echo "MIRROID_BINARY=$BINARY" >> "$GITHUB_ENV"
           echo "Found binary at: $BINARY"
+
+      - name: Create tarball with deps (Linux)
+        if: matrix.target == 'linux'
+        shell: bash
+        run: |
+          mkdir -p _tar/mirroid
+          cp "$MIRROID_BINARY" _tar/mirroid/mirroid
+          cp _bundled/* _tar/mirroid/
+          cd _tar && tar cJf ../mirroid-linux-amd64.tar.xz mirroid/
 
       - name: Build .deb (Linux)
         if: matrix.target == 'linux'
@@ -118,6 +169,13 @@ jobs:
         with:
           name: mirroid-appimage
           path: Mirroid-*.AppImage
+
+      - name: Inject deps into app bundle (macOS)
+        if: matrix.target == 'darwin'
+        shell: bash
+        run: |
+          cp _bundled/* Mirroid.app/Contents/MacOS/
+          chmod +x Mirroid.app/Contents/MacOS/adb Mirroid.app/Contents/MacOS/scrcpy
 
       - name: Zip app bundle (macOS)
         if: matrix.target == 'darwin'

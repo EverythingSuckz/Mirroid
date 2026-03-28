@@ -1,16 +1,2 @@
-Important: Runtime Dependencies
-================================
-
-Mirroid requires the following tools to be installed and available in your system PATH:
-
-1. adb (Android Debug Bridge)
-   - Download from: https://developer.android.com/tools/releases/platform-tools
-   - Or install via: scoop install adb / choco install adb
-
-2. scrcpy
-   - Download from: https://github.com/Genymobile/scrcpy/releases
-   - Or install via: scoop install scrcpy / choco install scrcpy
-
-Both tools must be accessible from the command line (i.e., added to your PATH environment variable).
-
-Without these dependencies, Mirroid will not be able to connect to or mirror Android devices.
+adb and scrcpy are included with this installation.
+No additional setup is required.

@@ -33,6 +33,14 @@ cp "$SCRIPT_DIR/mirroid.desktop" "$DEB_ROOT/usr/share/applications/mirroid.deskt
 # Copy icon
 cp "$REPO_ROOT/assets/icon.png" "$DEB_ROOT/usr/share/icons/hicolor/256x256/apps/mirroid.png"
 
+# Copy bundled dependencies
+BUNDLED_DIR="${3:-$REPO_ROOT/_bundled}"
+if [ -d "$BUNDLED_DIR" ]; then
+    mkdir -p "$DEB_ROOT/usr/lib/mirroid"
+    cp "$BUNDLED_DIR"/* "$DEB_ROOT/usr/lib/mirroid/"
+    chmod +x "$DEB_ROOT/usr/lib/mirroid/adb" "$DEB_ROOT/usr/lib/mirroid/scrcpy" 2>/dev/null || true
+fi
+
 # Write control file
 cat > "$DEB_ROOT/DEBIAN/control" <<EOF
 Package: mirroid
@@ -40,7 +48,6 @@ Version: ${DEB_VERSION}
 Architecture: amd64
 Maintainer: EverythingSuckz <noreply@github.com>
 Depends: libc6, libgl1
-Recommends: adb, scrcpy
 Section: utils
 Priority: optional
 Homepage: https://github.com/EverythingSuckz/Mirroid

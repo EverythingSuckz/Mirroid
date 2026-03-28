@@ -472,6 +472,9 @@ func (dp *DevicePanel) syncActionVisibility() {
 // Connected devices are updated; previously known devices that are absent
 // are kept in the table as "Disconnected".
 func (dp *DevicePanel) refreshDevices() {
+	if dp.app.adbClient == nil {
+		return
+	}
 	liveDevices, err := dp.app.adbClient.GetDevices()
 	if err != nil {
 		fyne.Do(func() {
