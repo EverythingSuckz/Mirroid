@@ -97,7 +97,7 @@ jobs:
           mkdir -p _portable
           cp Mirroid.exe _portable/
           cp _bundled/* _portable/
-          cd _portable && zip -r ../mirroid-windows-amd64-portable.zip .
+          cd _portable && 7z a -tzip ../mirroid-windows-amd64-portable.zip .
 
       - name: Upload raw binary (Windows)
         if: matrix.target == 'windows'
