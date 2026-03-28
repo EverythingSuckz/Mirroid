@@ -311,26 +311,25 @@ func (dip *DeviceInfoPanel) buildDisconnectedView(serial string) fyne.CanvasObje
 
 	title := widget.NewLabelWithStyle(name, fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 
+	reconnecting := dip.app.devicePanel.IsReconnecting(serial)
+
 	msg := widget.NewLabel("This device is not connected")
+	if reconnecting {
+		msg.SetText("Reconnecting...")
+	}
 	msg.TextStyle = fyne.TextStyle{Italic: true}
 	msg.Alignment = fyne.TextAlignCenter
 
-	reconnectBtn := widget.NewButtonWithIcon("Reconnect", theme.MediaReplayIcon(), func() {
-		go func() {
-			dip.app.logsPanel.Log("Reconnecting to " + serial + "...")
-			if err := dip.app.adbClient.Connect(serial); err != nil {
-				dip.app.logsPanel.Log("[ERROR]Reconnect " + serial + ": " + err.Error())
-			} else {
-				dip.app.logsPanel.Log("[OK]Reconnected " + serial)
-			}
-			dip.app.devicePanel.refreshDevices()
-			// Reload info if now connected
-			if dip.app.devicePanel.IsConnected(serial) {
-				dip.LoadDeviceInfo(serial)
-			}
-		}()
+	var reconnectBtn *widget.Button
+	reconnectBtn = widget.NewButtonWithIcon("Reconnect", theme.MediaReplayIcon(), func() {
+		reconnectBtn.Disable()
+		msg.SetText("Reconnecting...")
+		dip.app.devicePanel.ReconnectDevice(serial)
 	})
 	reconnectBtn.Importance = widget.HighImportance
+	if reconnecting {
+		reconnectBtn.Disable()
+	}
 
 	removeBtn := widget.NewButtonWithIcon("Remove", theme.ContentRemoveIcon(), func() {
 		dip.app.devicePanel.RemoveDevice(serial)

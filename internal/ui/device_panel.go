@@ -25,6 +25,8 @@ type DevicePanel struct {
 	devices        []adb.Device      // all known devices (connected + disconnected)
 	connectedSet   map[string]bool   // serials currently reported by adb
 	checkedSerials map[string]bool   // serials checked for batch actions
+	reconnectingSet map[string]bool  // serials currently reconnecting
+	reconnectErrors map[string]string // serials that failed to reconnect
 	lastSelected   string
 	mu             sync.Mutex
 
@@ -41,9 +43,11 @@ type DevicePanel struct {
 // NewDevicePanel creates a new device panel.
 func NewDevicePanel(app *App) *DevicePanel {
 	dp := &DevicePanel{
-		app:            app,
-		connectedSet:   make(map[string]bool),
-		checkedSerials: make(map[string]bool),
+		app:             app,
+		connectedSet:    make(map[string]bool),
+		checkedSerials:  make(map[string]bool),
+		reconnectingSet: make(map[string]bool),
+		reconnectErrors: make(map[string]string),
 	}
 	// Load previously known devices from config
 	if app.cfg != nil {
@@ -153,7 +157,9 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 				return "USB"
 			}())
 
-			// Status: Error > Mirroring > Connected > Disconnected
+			// Status priority:
+			// Connected:    Error > Mirroring > Connected
+			// Disconnected: Reconnecting > Error > Disconnected
 			status := "Disconnected"
 			statusTip := ""
 			if connected {
@@ -165,6 +171,17 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 					} else if dp.app.runner.IsRunningFor(d.Serial) {
 						status = "Mirroring"
 					}
+				}
+			} else {
+				dp.mu.Lock()
+				reconnecting := dp.reconnectingSet[d.Serial]
+				reconnectErr := dp.reconnectErrors[d.Serial]
+				dp.mu.Unlock()
+				if reconnecting {
+					status = "Reconnecting"
+				} else if reconnectErr != "" {
+					status = "Error"
+					statusTip = reconnectErr + " (check logs)"
 				}
 			}
 			statusLbl := cols.Objects[3].(*ttwidget.Label)
@@ -277,14 +294,7 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 
 	dp.reconnectBtn = ttwidget.NewButtonWithIcon("", theme.MediaReplayIcon(), func() {
 		for _, s := range dp.SelectedDisconnectedDevices() {
-			go func(addr string) {
-				if err := dp.app.adbClient.Connect(addr); err != nil {
-					dp.app.logsPanel.Log("[ERROR]Reconnect " + addr + ": " + err.Error())
-				} else {
-					dp.app.logsPanel.Log("[OK]Reconnected " + addr)
-				}
-				dp.refreshDevices()
-			}(s)
+			dp.ReconnectDevice(s)
 		}
 	})
 	dp.reconnectBtn.Importance = widget.LowImportance
@@ -360,11 +370,15 @@ func (dp *DevicePanel) syncActionVisibility() {
 	dp.mu.Lock()
 	hasConnected := false
 	hasDisconnected := false
+	anyReconnecting := false
 	for serial := range dp.checkedSerials {
 		if dp.connectedSet[serial] {
 			hasConnected = true
 		} else {
 			hasDisconnected = true
+			if dp.reconnectingSet[serial] {
+				anyReconnecting = true
+			}
 		}
 	}
 	dp.mu.Unlock()
@@ -386,6 +400,11 @@ func (dp *DevicePanel) syncActionVisibility() {
 	if hasDisconnected {
 		dp.removeBtn.Show()
 		dp.reconnectBtn.Show()
+		if anyReconnecting {
+			dp.reconnectBtn.Disable()
+		} else {
+			dp.reconnectBtn.Enable()
+		}
 	} else {
 		dp.removeBtn.Hide()
 		dp.reconnectBtn.Hide()
@@ -435,6 +454,8 @@ func (dp *DevicePanel) refreshDevices() {
 	dp.connectedSet = make(map[string]bool, len(liveDevices))
 	for _, d := range liveDevices {
 		dp.connectedSet[d.Serial] = true
+		// Clear reconnect errors for devices that are now connected
+		delete(dp.reconnectErrors, d.Serial)
 	}
 
 	// Merge live devices into known devices list.
@@ -664,4 +685,54 @@ func (dp *DevicePanel) clearDisconnected() {
 		dp.saveKnownDevices()
 		dp.updateList()
 	}
+}
+
+// IsReconnecting returns whether a device is currently reconnecting.
+func (dp *DevicePanel) IsReconnecting(serial string) bool {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+	return dp.reconnectingSet[serial]
+}
+
+// ReconnectDevice attempts to reconnect a disconnected device.
+// It tracks the reconnecting state, disables buttons, and updates the UI.
+func (dp *DevicePanel) ReconnectDevice(serial string) {
+	dp.mu.Lock()
+	if dp.reconnectingSet[serial] {
+		dp.mu.Unlock()
+		return // already reconnecting
+	}
+	dp.reconnectingSet[serial] = true
+	delete(dp.reconnectErrors, serial)
+	dp.mu.Unlock()
+
+	dp.updateList()
+
+	go func() {
+		dp.app.logsPanel.Log("Reconnecting to " + serial + "...")
+		err := dp.app.adbClient.Connect(serial)
+
+		dp.mu.Lock()
+		delete(dp.reconnectingSet, serial)
+		if err != nil {
+			dp.reconnectErrors[serial] = "Connection failed"
+		}
+		dp.mu.Unlock()
+
+		if err != nil {
+			dp.app.logsPanel.Log("[ERROR]Reconnect " + serial + ": " + err.Error())
+		} else {
+			dp.app.logsPanel.Log("[OK]Reconnected " + serial)
+		}
+
+		dp.refreshDevices()
+
+		// Reload info panel if this device is selected
+		dp.mu.Lock()
+		selected := dp.lastSelected == serial
+		dp.mu.Unlock()
+		if selected && dp.app.deviceInfoPanel != nil {
+			dp.app.deviceInfoPanel.LoadDeviceInfo(serial)
+		}
+	}()
 }
