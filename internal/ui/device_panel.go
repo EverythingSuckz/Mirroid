@@ -92,13 +92,21 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 			return len(dp.devices)
 		},
 		func() fyne.CanvasObject {
+			modelLabel := widget.NewLabel("")
+			modelLabel.Truncation = fyne.TextTruncateEllipsis
+			addrLabel := widget.NewLabel("")
+			addrLabel.Truncation = fyne.TextTruncateEllipsis
+			typeLabel := widget.NewLabel("")
+			typeLabel.Truncation = fyne.TextTruncateEllipsis
+			statusLabel := widget.NewLabel("")
+			statusLabel.Truncation = fyne.TextTruncateEllipsis
 			return container.NewBorder(nil, nil,
 				widget.NewCheck("", nil), nil,
 				container.NewGridWithColumns(4,
-					widget.NewLabel(""),
-					widget.NewLabel(""),
-					widget.NewLabel(""),
-					widget.NewLabel(""),
+					modelLabel,
+					addrLabel,
+					typeLabel,
+					statusLabel,
 				),
 			)
 		},
