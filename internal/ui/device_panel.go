@@ -251,20 +251,49 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 	dp.stopBtn.SetToolTip("Stop checked devices")
 
 	dp.disconnectBtn = ttwidget.NewButtonWithIcon("", theme.LogoutIcon(), func() {
-		for _, s := range dp.SelectedDevices() {
-			dp.app.runner.StopFor(s)
-			if err := dp.app.adbClient.Disconnect(s); err != nil {
-				dp.app.logsPanel.Log("[ERROR]Disconnect: " + err.Error())
-			} else {
-				dp.app.logsPanel.Log("[OK]Disconnected " + s)
-				ip := s
-				if idx := strings.Index(ip, ":"); idx > 0 {
-					ip = ip[:idx]
+		go func() {
+			for _, s := range dp.SelectedDevices() {
+				dp.app.runner.StopFor(s)
+
+				// Look up model for this serial
+				model := ""
+				dp.mu.Lock()
+				for _, d := range dp.devices {
+					if d.Serial == s {
+						model = d.Model
+						break
+					}
 				}
-				dp.app.ignoredAddrs[ip] = true
+				dp.mu.Unlock()
+
+				if err := dp.app.adbClient.Disconnect(s); err != nil {
+					dp.app.logsPanel.Log("[ERROR]Disconnect: " + err.Error())
+				} else {
+					dp.app.logsPanel.Log("[OK]Disconnected " + s)
+				}
+
+				// Block reconnection via serial, IP, and model
+				dp.app.ignoredAddrs[s] = true
+				if idx := strings.Index(s, ":"); idx > 0 {
+					dp.app.ignoredAddrs[s[:idx]] = true
+				}
+				if model != "" {
+					dp.app.ignoredAddrs[model] = true
+					dp.app.ignoredAddrs[strings.ReplaceAll(model, " ", "_")] = true
+				}
 			}
-		}
-		go dp.refreshDevices()
+
+			// Sweep remaining ADB entries to catch mDNS aliases
+			remaining, _ := dp.app.adbClient.GetDevices()
+			for _, d := range remaining {
+				if d.Model != "" && dp.app.ignoredAddrs[d.Model] {
+					dp.app.ignoredAddrs[d.Serial] = true
+					_ = dp.app.adbClient.Disconnect(d.Serial)
+				}
+			}
+
+			dp.refreshDevices()
+		}()
 	})
 	dp.disconnectBtn.Importance = widget.LowImportance
 	dp.disconnectBtn.SetToolTip("Disconnect checked devices")
