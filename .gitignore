@@ -34,3 +34,12 @@ __pycache__/
 dist/
 build/
 .venv/
+
+# Packaging build artifacts
+AppDir/
+deb-root/
+*.AppImage
+*.deb
+*.dmg
+*-setup.exe
+linuxdeploy-*.AppImage

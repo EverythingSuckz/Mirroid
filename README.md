@@ -41,7 +41,16 @@ Tired of typing out long scrcpy commands in the terminal. Wanted a simple way to
 
 ## Installation
 
-Check the [Releases](https://github.com/EverythingSuckz/Mirroid/releases) section for pre-built binaries.
+Download the latest release from [Releases](https://github.com/EverythingSuckz/Mirroid/releases):
+
+| Platform | Recommended | Alternative |
+|---|---|---|
+| **Windows** | `.exe` installer (setup wizard) | Standalone `.exe` |
+| **Linux** | `.deb` (Debian/Ubuntu) or `.AppImage` (any distro) | `.tar.xz` |
+| **macOS** | `.dmg` (drag to Applications) | `.zip` |
+
+> [!IMPORTANT]
+> **adb** and **scrcpy** must be installed and available in your `PATH` before running Mirroid.
 
 ## Building
 

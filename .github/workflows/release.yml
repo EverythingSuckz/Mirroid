@@ -16,16 +16,10 @@ jobs:
         include:
           - os: windows-latest
             target: windows
-            artifact: mirroid-windows-amd64.exe
-            output: Mirroid.exe
           - os: ubuntu-latest
             target: linux
-            artifact: mirroid-linux-amd64.tar.xz
-            output: Mirroid.tar.xz
           - os: macos-latest
             target: darwin
-            artifact: mirroid-macos-arm64.zip
-            output: Mirroid.app
 
     runs-on: ${{ matrix.os }}
 
@@ -50,23 +44,108 @@ jobs:
       - name: Package
         run: fyne package --target ${{ matrix.target }} --release
 
-      - name: Rename artifact (Windows)
+      - name: Rename binary (Windows)
         if: matrix.target == 'windows'
-        run: mv "${{ matrix.output }}" "${{ matrix.artifact }}"
+        run: |
+          Copy-Item "Mirroid.exe" "mirroid-windows-amd64.exe"
 
-      - name: Rename artifact (Linux)
+      - name: Install InnoSetup (Windows)
+        if: matrix.target == 'windows'
+        run: choco install innosetup -y
+
+      - name: Build installer (Windows)
+        if: matrix.target == 'windows'
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion="${{ github.ref_name }}" packaging\windows\mirroid.iss
+
+      - name: Upload raw binary (Windows)
+        if: matrix.target == 'windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: mirroid-windows-amd64.exe
+          path: mirroid-windows-amd64.exe
+
+      - name: Upload installer (Windows)
+        if: matrix.target == 'windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: mirroid-windows-amd64-setup.exe
+          path: mirroid-windows-amd64-setup.exe
+
+      - name: Rename tarball (Linux)
         if: matrix.target == 'linux'
-        run: mv "${{ matrix.output }}" "${{ matrix.artifact }}"
+        run: |
+          cp Mirroid.tar.xz mirroid-linux-amd64.tar.xz
+
+      - name: Extract binary for packaging (Linux)
+        if: matrix.target == 'linux'
+        run: |
+          mkdir -p _extracted
+          tar xf Mirroid.tar.xz -C _extracted
+          BINARY=$(find _extracted -type f -executable | head -1)
+          echo "MIRROID_BINARY=$BINARY" >> "$GITHUB_ENV"
+          echo "Found binary at: $BINARY"
+
+      - name: Build .deb (Linux)
+        if: matrix.target == 'linux'
+        run: |
+          chmod +x packaging/linux/build-deb.sh
+          packaging/linux/build-deb.sh "${{ github.ref_name }}" "$MIRROID_BINARY"
+
+      - name: Build AppImage (Linux)
+        if: matrix.target == 'linux'
+        run: |
+          chmod +x packaging/linux/build-appimage.sh
+          packaging/linux/build-appimage.sh "${{ github.ref_name }}" "$MIRROID_BINARY"
+
+      - name: Upload tarball (Linux)
+        if: matrix.target == 'linux'
+        uses: actions/upload-artifact@v6
+        with:
+          name: mirroid-linux-amd64.tar.xz
+          path: mirroid-linux-amd64.tar.xz
+
+      - name: Upload .deb (Linux)
+        if: matrix.target == 'linux'
+        uses: actions/upload-artifact@v6
+        with:
+          name: mirroid-deb
+          path: mirroid_*.deb
+
+      - name: Upload AppImage (Linux)
+        if: matrix.target == 'linux'
+        uses: actions/upload-artifact@v6
+        with:
+          name: mirroid-appimage
+          path: Mirroid-*.AppImage
 
       - name: Zip app bundle (macOS)
         if: matrix.target == 'darwin'
-        run: zip -r "${{ matrix.artifact }}" "${{ matrix.output }}"
+        run: zip -r mirroid-macos-arm64.zip Mirroid.app
 
-      - name: Upload artifact
+      - name: Install create-dmg (macOS)
+        if: matrix.target == 'darwin'
+        run: brew install create-dmg
+
+      - name: Build DMG (macOS)
+        if: matrix.target == 'darwin'
+        run: |
+          chmod +x packaging/macos/build-dmg.sh
+          packaging/macos/build-dmg.sh "${{ github.ref_name }}" "Mirroid.app"
+
+      - name: Upload zip (macOS)
+        if: matrix.target == 'darwin'
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          name: mirroid-macos-arm64.zip
+          path: mirroid-macos-arm64.zip
+
+      - name: Upload DMG (macOS)
+        if: matrix.target == 'darwin'
+        uses: actions/upload-artifact@v6
+        with:
+          name: mirroid-macos-arm64.dmg
+          path: mirroid-macos-arm64.dmg
 
   release:
     needs: build
@@ -89,6 +168,7 @@ jobs:
       - name: Sign artifacts
         run: |
           for file in artifacts/*; do
+            [ -f "$file" ] || continue
             gpg --batch --yes --detach-sign --armor "$file"
           done
 

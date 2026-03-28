@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Mirroid
+Comment=Desktop GUI for scrcpy
+Exec=mirroid
+Icon=mirroid
+Categories=Utility;Development;
+Terminal=false
+StartupWMClass=com.mirroid.app
+Keywords=android;mirror;scrcpy;screen;
