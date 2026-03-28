@@ -22,6 +22,7 @@ import (
 	"mirroid/internal/deps"
 	"mirroid/internal/model"
 	"mirroid/internal/scrcpy"
+	"mirroid/internal/updater"
 )
 
 // App is the top-level application struct.
@@ -102,6 +103,14 @@ func (a *App) Run() {
 		a.initClients(adbPath, scrcpyPath)
 	}
 
+	exe, _ := os.Executable()
+	if exe != "" {
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = resolved
+		}
+		go updater.Cleanup(exe)
+	}
+
 	a.buildMainUI()
 	a.window.ShowAndRun()
 }
@@ -126,7 +135,16 @@ func (a *App) buildMainUI() {
 		}),
 	)
 
-	mainMenu := fyne.NewMainMenu(deviceMenu, logsMenu)
+	aboutMenu := fyne.NewMenu("About",
+		fyne.NewMenuItem("About Mirroid", func() {
+			a.showAboutDialog()
+		}),
+		fyne.NewMenuItem("Check for Updates", func() {
+			go a.checkForUpdates(false)
+		}),
+	)
+
+	mainMenu := fyne.NewMainMenu(deviceMenu, logsMenu, aboutMenu)
 	a.window.SetMainMenu(mainMenu)
 
 	// Empty state
@@ -229,6 +247,16 @@ func (a *App) buildMainUI() {
 			fyne.Do(func() {
 				a.logsPanel.ShowWindow()
 			})
+		}()
+	}
+
+	// Auto-check for updates on startup (with 12-hour cooldown)
+	if a.cfg.AppConf.AutoCheckUpdates {
+		go func() {
+			time.Sleep(5 * time.Second)
+			if a.shouldAutoCheck() {
+				a.checkForUpdates(true) // timestamp saved inside on success
+			}
 		}()
 	}
 }

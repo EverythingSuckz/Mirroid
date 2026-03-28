@@ -171,6 +171,17 @@ jobs:
           name: mirroid-appimage
           path: Mirroid-*.AppImage
 
+      - name: Copy raw binary (Linux)
+        if: matrix.target == 'linux'
+        run: cp _tar/mirroid/mirroid mirroid-linux-amd64
+
+      - name: Upload raw binary (Linux)
+        if: matrix.target == 'linux'
+        uses: actions/upload-artifact@v6
+        with:
+          name: mirroid-linux-amd64
+          path: mirroid-linux-amd64
+
       - name: Inject deps into app bundle (macOS)
         if: matrix.target == 'darwin'
         shell: bash
@@ -205,6 +216,17 @@ jobs:
         with:
           name: mirroid-macos-arm64.dmg
           path: mirroid-macos-arm64.dmg
+
+      - name: Copy raw binary (macOS)
+        if: matrix.target == 'darwin'
+        run: cp Mirroid.app/Contents/MacOS/Mirroid mirroid-macos-arm64
+
+      - name: Upload raw binary (macOS)
+        if: matrix.target == 'darwin'
+        uses: actions/upload-artifact@v6
+        with:
+          name: mirroid-macos-arm64
+          path: mirroid-macos-arm64
 
   release:
     needs: build

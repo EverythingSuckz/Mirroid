@@ -39,6 +39,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
+[InstallDelete]
+; Clean previous installation so stale files (e.g. bundled adb/scrcpy from a
+; different version) don't persist across updates. The uninstaller is recreated
+; by the installer after this step.
+Type: filesandordirs; Name: "{app}\*"
+
 [Files]
 Source: "..\..\Mirroid.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\_bundled\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -49,6 +55,7 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
+; Normal install: show "Launch Mirroid" checkbox on final page
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
@@ -84,4 +91,22 @@ begin
   LinkLabel.OnClick := @ArtCreditClick;
   LinkLabel.Left := PrefixLabel.Left + PrefixLabel.Width + ScaleX(3);
   LinkLabel.Top := PrefixLabel.Top;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  AppDataDir: String;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    AppDataDir := ExpandConstant('{userappdata}\Mirroid');
+    if DirExists(AppDataDir) then
+    begin
+      if MsgBox('Do you want to remove your Mirroid settings and presets?',
+        mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+      begin
+        DelTree(AppDataDir, True, True, True);
+      end;
+    end;
+  end;
 end;

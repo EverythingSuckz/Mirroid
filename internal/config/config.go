@@ -21,8 +21,10 @@ type Config struct {
 
 // AppConfig holds top-level app settings.
 type AppConfig struct {
-	ScrcpyPath string `json:"scrcpy_path"`
-	ADBPath    string `json:"adb_path"`
+	ScrcpyPath       string `json:"scrcpy_path"`
+	ADBPath          string `json:"adb_path"`
+	AutoCheckUpdates bool   `json:"auto_check_updates"`
+	LastUpdateCheck  int64  `json:"last_update_check"`
 }
 
 // New creates a Config, ensuring the config directory exists.
@@ -40,8 +42,9 @@ func New() (*Config, error) {
 	c := &Config{
 		dir: dir,
 		AppConf: AppConfig{
-			ScrcpyPath: "scrcpy",
-			ADBPath:    "adb",
+			ScrcpyPath:       "scrcpy",
+			ADBPath:          "adb",
+			AutoCheckUpdates: true,
 		},
 	}
 
