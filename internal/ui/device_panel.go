@@ -775,7 +775,25 @@ func (dp *DevicePanel) ReconnectDevice(serial string) {
 	}
 	dp.reconnectingSet[serial] = true
 	delete(dp.reconnectErrors, serial)
+	// Look up model before releasing the lock
+	devModel := ""
+	for _, d := range dp.devices {
+		if d.Serial == serial {
+			devModel = d.Model
+			break
+		}
+	}
 	dp.mu.Unlock()
+
+	// Clear ignoredAddrs so refreshDevices won't filter the device back out
+	delete(dp.app.ignoredAddrs, serial)
+	if idx := strings.Index(serial, ":"); idx > 0 {
+		delete(dp.app.ignoredAddrs, serial[:idx])
+	}
+	if devModel != "" {
+		delete(dp.app.ignoredAddrs, devModel)
+		delete(dp.app.ignoredAddrs, strings.ReplaceAll(devModel, " ", "_"))
+	}
 
 	dp.updateList()
 
