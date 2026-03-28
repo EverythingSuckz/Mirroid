@@ -102,6 +102,12 @@ if ($scrcpyInner) {
 }
 Write-Done "scrcpy + DLLs"
 
+# ── Remove unnecessary scrcpy extras ──
+foreach ($junk in @("icon.png", "open_a_terminal_here.bat", "scrcpy-console.bat", "scrcpy-noconsole.vbs")) {
+    $junkPath = Join-Path $BundledDir $junk
+    if (Test-Path $junkPath) { Remove-Item -Force $junkPath }
+}
+
 # ── Cleanup temp ──
 Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue
 
