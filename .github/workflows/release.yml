@@ -278,7 +278,33 @@ jobs:
             esac
           done < <(git log "$RANGE" --pretty=format:"%h %s" --reverse)
 
-          BODY=""
+          # Build download table
+          BASE_URL="https://github.com/EverythingSuckz/Mirroid/releases/download/${CURRENT_TAG}"
+          DEB_VERSION="${CURRENT_TAG#v}"
+
+          DOWNLOADS="## Downloads\n\n"
+          DOWNLOADS+="### Windows\n"
+          DOWNLOADS+="| Variant | Download |\n"
+          DOWNLOADS+="|---------|----------|\n"
+          DOWNLOADS+="| Installer (recommended) | [mirroid-windows-amd64-setup.exe](${BASE_URL}/mirroid-windows-amd64-setup.exe) |\n"
+          DOWNLOADS+="| Portable | [mirroid-windows-amd64-portable.zip](${BASE_URL}/mirroid-windows-amd64-portable.zip) |\n\n"
+          DOWNLOADS+="### Linux\n"
+          DOWNLOADS+="| Variant | Download |\n"
+          DOWNLOADS+="|---------|----------|\n"
+          DOWNLOADS+="| AppImage | [Mirroid-${CURRENT_TAG}-x86_64.AppImage](${BASE_URL}/Mirroid-${CURRENT_TAG}-x86_64.AppImage) |\n"
+          DOWNLOADS+="| Debian | [mirroid_${DEB_VERSION}_amd64.deb](${BASE_URL}/mirroid_${DEB_VERSION}_amd64.deb) |\n"
+          DOWNLOADS+="| Tarball | [mirroid-linux-amd64.tar.xz](${BASE_URL}/mirroid-linux-amd64.tar.xz) |\n\n"
+          DOWNLOADS+="### macOS (Apple Silicon)\n"
+          DOWNLOADS+="| Variant | Download |\n"
+          DOWNLOADS+="|---------|----------|\n"
+          DOWNLOADS+="| DMG (recommended) | [mirroid-macos-arm64.dmg](${BASE_URL}/mirroid-macos-arm64.dmg) |\n"
+          DOWNLOADS+="| App Bundle | [mirroid-macos-arm64.zip](${BASE_URL}/mirroid-macos-arm64.zip) |\n\n"
+          DOWNLOADS+="> All artifacts are GPG-signed. Download the corresponding \`.asc\` file to verify.\n\n---\n\n"
+
+          BODY="${DOWNLOADS}"
+          if [ -n "$FEATURES" ] || [ -n "$FIXES" ] || [ -n "$CHORES" ]; then
+            BODY="${BODY}## Changelog\n\n"
+          fi
           if [ -n "$FEATURES" ]; then
             BODY="${BODY}### Features\n${FEATURES}\n"
           fi
