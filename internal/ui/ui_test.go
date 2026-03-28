@@ -239,12 +239,14 @@ func TestDevicePanelMultiSelect(t *testing.T) {
 	dp := NewDevicePanel(app)
 	dp.Build()
 
-	// Inject test devices and check two of them
+	// Inject test devices (both connected) and check two of them
 	dp.mu.Lock()
 	dp.devices = []adb.Device{
 		{Serial: "192.168.1.5:5555", Model: "Pixel_7", Source: "wireless"},
 		{Serial: "ABCD1234", Model: "Galaxy_S24", Source: "usb"},
 	}
+	dp.connectedSet["192.168.1.5:5555"] = true
+	dp.connectedSet["ABCD1234"] = true
 	dp.checkedSerials["192.168.1.5:5555"] = true
 	dp.checkedSerials["ABCD1234"] = true
 	dp.mu.Unlock()
@@ -265,6 +267,27 @@ func TestDevicePanelMultiSelect(t *testing.T) {
 	}
 	if len(got) == 1 && got[0] != "192.168.1.5:5555" {
 		t.Errorf("SelectedDevices: got %q, want 192.168.1.5:5555", got[0])
+	}
+
+	// Test SelectedDisconnectedDevices: mark one device as disconnected
+	dp.mu.Lock()
+	delete(dp.connectedSet, "192.168.1.5:5555")
+	dp.checkedSerials["192.168.1.5:5555"] = true
+	dp.mu.Unlock()
+
+	// SelectedDevices should no longer include the disconnected device
+	got = dp.SelectedDevices()
+	if len(got) != 0 {
+		t.Errorf("SelectedDevices with disconnected: got %d serials, want 0", len(got))
+	}
+
+	// SelectedDisconnectedDevices should include it
+	gotDisc := dp.SelectedDisconnectedDevices()
+	if len(gotDisc) != 1 {
+		t.Errorf("SelectedDisconnectedDevices: got %d serials, want 1", len(gotDisc))
+	}
+	if len(gotDisc) == 1 && gotDisc[0] != "192.168.1.5:5555" {
+		t.Errorf("SelectedDisconnectedDevices: got %q, want 192.168.1.5:5555", gotDisc[0])
 	}
 }
 

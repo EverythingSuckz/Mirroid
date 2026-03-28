@@ -28,11 +28,13 @@ type DevicePanel struct {
 	lastSelected   string
 	mu             sync.Mutex
 
-	// bulk action buttons — shown only when 2+ devices are checked
+	// bulk action buttons — context-sensitive based on checked devices
 	mirrorBtn     *ttwidget.Button
 	stopBtn       *ttwidget.Button
 	disconnectBtn *ttwidget.Button
 	previewBtn    *ttwidget.Button
+	removeBtn     *ttwidget.Button // remove checked (disconnected) devices
+	reconnectBtn  *ttwidget.Button // reconnect checked disconnected devices
 	actionSep     *widget.Separator
 }
 
@@ -57,6 +59,18 @@ func (dp *DevicePanel) IsConnected(serial string) bool {
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
 	return dp.connectedSet[serial]
+}
+
+// GetDevice returns the known device entry for the given serial.
+func (dp *DevicePanel) GetDevice(serial string) (adb.Device, bool) {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+	for _, d := range dp.devices {
+		if d.Serial == serial {
+			return d, true
+		}
+	}
+	return adb.Device{}, false
 }
 
 // Build creates the device table UI.
@@ -151,23 +165,17 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 
 			serial := d.Serial
 			check.OnChanged = nil
-			// Only allow checking connected devices
-			if connected {
-				check.Enable()
-				check.SetChecked(isChecked)
-				check.OnChanged = func(checked bool) {
-					dp.mu.Lock()
-					if checked {
-						dp.checkedSerials[serial] = true
-					} else {
-						delete(dp.checkedSerials, serial)
-					}
-					dp.mu.Unlock()
-					dp.syncActionVisibility()
+			check.Enable()
+			check.SetChecked(isChecked)
+			check.OnChanged = func(checked bool) {
+				dp.mu.Lock()
+				if checked {
+					dp.checkedSerials[serial] = true
+				} else {
+					delete(dp.checkedSerials, serial)
 				}
-			} else {
-				check.SetChecked(false)
-				check.Disable()
+				dp.mu.Unlock()
+				dp.syncActionVisibility()
 			}
 		},
 	)
@@ -209,7 +217,7 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 	dp.stopBtn.Importance = widget.LowImportance
 	dp.stopBtn.SetToolTip("Stop checked devices")
 
-	dp.disconnectBtn = ttwidget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
+	dp.disconnectBtn = ttwidget.NewButtonWithIcon("", theme.LogoutIcon(), func() {
 		for _, s := range dp.SelectedDevices() {
 			dp.app.runner.StopFor(s)
 			if err := dp.app.adbClient.Disconnect(s); err != nil {
@@ -234,6 +242,46 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 	dp.previewBtn.Importance = widget.LowImportance
 	dp.previewBtn.SetToolTip("Preview command")
 
+	// Disconnected-device bulk actions
+	dp.removeBtn = ttwidget.NewButtonWithIcon("", theme.ContentRemoveIcon(), func() {
+		for _, s := range dp.SelectedDisconnectedDevices() {
+			dp.app.logsPanel.Log("[OK]Removed " + s)
+		}
+		dp.mu.Lock()
+		var keep []adb.Device
+		for _, d := range dp.devices {
+			if !dp.checkedSerials[d.Serial] || dp.connectedSet[d.Serial] {
+				keep = append(keep, d)
+			} else {
+				delete(dp.checkedSerials, d.Serial)
+				if dp.lastSelected == d.Serial {
+					dp.lastSelected = ""
+				}
+			}
+		}
+		dp.devices = keep
+		dp.mu.Unlock()
+		dp.saveKnownDevices()
+		dp.updateList()
+	})
+	dp.removeBtn.Importance = widget.LowImportance
+	dp.removeBtn.SetToolTip("Remove checked devices")
+
+	dp.reconnectBtn = ttwidget.NewButtonWithIcon("", theme.MediaReplayIcon(), func() {
+		for _, s := range dp.SelectedDisconnectedDevices() {
+			go func(addr string) {
+				if err := dp.app.adbClient.Connect(addr); err != nil {
+					dp.app.logsPanel.Log("[ERROR]Reconnect " + addr + ": " + err.Error())
+				} else {
+					dp.app.logsPanel.Log("[OK]Reconnected " + addr)
+				}
+				dp.refreshDevices()
+			}(s)
+		}
+	})
+	dp.reconnectBtn.Importance = widget.LowImportance
+	dp.reconnectBtn.SetToolTip("Reconnect checked devices")
+
 	dp.actionSep = widget.NewSeparator()
 
 	// Start hidden
@@ -241,6 +289,8 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 	dp.stopBtn.Hide()
 	dp.disconnectBtn.Hide()
 	dp.previewBtn.Hide()
+	dp.removeBtn.Hide()
+	dp.reconnectBtn.Hide()
 	dp.actionSep.Hide()
 
 	//  Always-visible toolbar buttons
@@ -259,14 +309,30 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 	pairBtn.Importance = widget.LowImportance
 	pairBtn.SetToolTip("Pair new device")
 
+	moreMenu := fyne.NewMenu("",
+		fyne.NewMenuItem("Clear Disconnected", func() {
+			dp.clearDisconnected()
+		}),
+	)
+	moreBtn := ttwidget.NewButtonWithIcon("", theme.MoreVerticalIcon(), func() {
+		c := fyne.CurrentApp().Driver().CanvasForObject(dp.deviceList)
+		widget.ShowPopUpMenuAtRelativePosition(moreMenu, c,
+			fyne.NewPos(0, refreshBtn.Size().Height), refreshBtn)
+	})
+	moreBtn.Importance = widget.LowImportance
+	moreBtn.SetToolTip("More options")
+
 	toolbar := container.NewHBox(
 		dp.mirrorBtn,
 		dp.stopBtn,
 		dp.disconnectBtn,
 		dp.previewBtn,
+		dp.removeBtn,
+		dp.reconnectBtn,
 		dp.actionSep,
 		refreshBtn,
 		pairBtn,
+		moreBtn,
 	)
 
 	topSection := container.NewVBox(
@@ -281,23 +347,46 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 	)
 }
 
-// syncActionVisibility shows bulk action buttons only when 2+ devices are checked.
+// syncActionVisibility shows context-sensitive bulk action buttons based on checked devices.
 func (dp *DevicePanel) syncActionVisibility() {
 	dp.mu.Lock()
-	count := len(dp.checkedSerials)
+	hasConnected := false
+	hasDisconnected := false
+	for serial := range dp.checkedSerials {
+		if dp.connectedSet[serial] {
+			hasConnected = true
+		} else {
+			hasDisconnected = true
+		}
+	}
 	dp.mu.Unlock()
 
-	if count >= 2 {
+	// Connected-device actions
+	if hasConnected {
 		dp.mirrorBtn.Show()
 		dp.stopBtn.Show()
 		dp.disconnectBtn.Show()
 		dp.previewBtn.Show()
-		dp.actionSep.Show()
 	} else {
 		dp.mirrorBtn.Hide()
 		dp.stopBtn.Hide()
 		dp.disconnectBtn.Hide()
 		dp.previewBtn.Hide()
+	}
+
+	// Disconnected-device actions
+	if hasDisconnected {
+		dp.removeBtn.Show()
+		dp.reconnectBtn.Show()
+	} else {
+		dp.removeBtn.Hide()
+		dp.reconnectBtn.Hide()
+	}
+
+	// Separator between context actions and permanent buttons
+	if hasConnected || hasDisconnected {
+		dp.actionSep.Show()
+	} else {
 		dp.actionSep.Hide()
 	}
 }
@@ -367,13 +456,6 @@ func (dp *DevicePanel) refreshDevices() {
 		} else {
 			// Truly new device
 			dp.devices = append(dp.devices, d)
-		}
-	}
-
-	// Prune checked serials for devices no longer connected
-	for serial := range dp.checkedSerials {
-		if !dp.connectedSet[serial] {
-			delete(dp.checkedSerials, serial)
 		}
 	}
 
@@ -523,16 +605,55 @@ func (dp *DevicePanel) SelectedDevice() string {
 	return ""
 }
 
-// SelectedDevices returns the serials of all checked devices (multi-select).
+// SelectedDevices returns the serials of all checked connected devices (multi-select).
 func (dp *DevicePanel) SelectedDevices() []string {
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
 
 	var serials []string
 	for _, d := range dp.devices {
-		if dp.checkedSerials[d.Serial] {
+		if dp.checkedSerials[d.Serial] && dp.connectedSet[d.Serial] {
 			serials = append(serials, d.Serial)
 		}
 	}
 	return serials
+}
+
+// SelectedDisconnectedDevices returns the serials of all checked disconnected devices.
+func (dp *DevicePanel) SelectedDisconnectedDevices() []string {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+
+	var serials []string
+	for _, d := range dp.devices {
+		if dp.checkedSerials[d.Serial] && !dp.connectedSet[d.Serial] {
+			serials = append(serials, d.Serial)
+		}
+	}
+	return serials
+}
+
+// clearDisconnected removes all disconnected devices from the known list.
+func (dp *DevicePanel) clearDisconnected() {
+	dp.mu.Lock()
+	var keep []adb.Device
+	for _, d := range dp.devices {
+		if dp.connectedSet[d.Serial] {
+			keep = append(keep, d)
+		} else {
+			delete(dp.checkedSerials, d.Serial)
+			if dp.lastSelected == d.Serial {
+				dp.lastSelected = ""
+			}
+		}
+	}
+	removed := len(dp.devices) - len(keep)
+	dp.devices = keep
+	dp.mu.Unlock()
+
+	if removed > 0 {
+		dp.app.logsPanel.Log(fmt.Sprintf("[OK]Cleared %d disconnected device(s)", removed))
+		dp.saveKnownDevices()
+		dp.updateList()
+	}
 }

@@ -45,6 +45,11 @@ type App struct {
 	emptyState     fyne.CanvasObject
 	connectedState fyne.CanvasObject
 	rootContainer  *fyne.Container
+
+	// bottom area: swaps between options/presets and disconnected hint
+	optionsContent    fyne.CanvasObject
+	disconnectedHint  fyne.CanvasObject
+	bottomStack       *fyne.Container
 }
 
 // NewApp creates and configures the application.
@@ -152,12 +157,29 @@ func (a *App) Run() {
 	presetsSection := widget.NewCard("Presets", "", a.presetsPanel.Build())
 
 	topArea := deviceSection
-	bottomArea := container.NewVScroll(container.NewVBox(
+
+	// Bottom area: options/presets (shown for connected devices)
+	a.optionsContent = container.NewVScroll(container.NewVBox(
 		optionsSection,
 		presetsSection,
 	))
 
-	leftSplit := container.NewVSplit(topArea, bottomArea)
+	// Disconnected hint (shown when selected device is offline)
+	hintIcon := canvas.NewImageFromResource(theme.ComputerIcon())
+	hintIcon.FillMode = canvas.ImageFillContain
+	hintIcon.SetMinSize(fyne.NewSize(64, 64))
+	hintLabel := widget.NewLabel("Select a connected device")
+	hintLabel.TextStyle = fyne.TextStyle{Italic: true}
+	hintLabel.Alignment = fyne.TextAlignCenter
+	a.disconnectedHint = container.NewCenter(container.NewVBox(
+		hintIcon,
+		hintLabel,
+	))
+	a.disconnectedHint.Hide()
+
+	a.bottomStack = container.NewStack(a.optionsContent, a.disconnectedHint)
+
+	leftSplit := container.NewVSplit(topArea, a.bottomStack)
 	leftSplit.SetOffset(0.35)
 	leftPanel := leftSplit
 
@@ -212,6 +234,21 @@ func (a *App) setConnectedLayout(connected bool) {
 	} else {
 		a.connectedState.Hide()
 		a.emptyState.Show()
+	}
+}
+
+// setOptionsAreaVisible toggles between the options/presets panels and
+// the "Select a connected device" hint in the left bottom area.
+func (a *App) setOptionsAreaVisible(show bool) {
+	if a.bottomStack == nil {
+		return
+	}
+	if show {
+		a.disconnectedHint.Hide()
+		a.optionsContent.Show()
+	} else {
+		a.optionsContent.Hide()
+		a.disconnectedHint.Show()
 	}
 }
 

@@ -52,6 +52,7 @@ func (dip *DeviceInfoPanel) LoadDeviceInfo(serial string) {
 			dip.currentSerial = ""
 			dip.mirrorBtn = nil
 			dip.stopBtn = nil
+			dip.app.setOptionsAreaVisible(true)
 			placeholder := widget.NewLabel("Select a device to view info")
 			placeholder.TextStyle = fyne.TextStyle{Italic: true}
 			dip.container.Objects = []fyne.CanvasObject{container.NewCenter(placeholder)}
@@ -60,8 +61,22 @@ func (dip *DeviceInfoPanel) LoadDeviceInfo(serial string) {
 		return
 	}
 
+	// Show disconnected view if the device is not connected
+	if dip.app.devicePanel != nil && !dip.app.devicePanel.IsConnected(serial) {
+		fyne.Do(func() {
+			dip.currentSerial = serial
+			dip.mirrorBtn = nil
+			dip.stopBtn = nil
+			dip.app.setOptionsAreaVisible(false)
+			dip.container.Objects = []fyne.CanvasObject{dip.buildDisconnectedView(serial)}
+			dip.container.Refresh()
+		})
+		return
+	}
+
 	fyne.Do(func() {
 		dip.currentSerial = serial
+		dip.app.setOptionsAreaVisible(true)
 		dip.activity.Start()
 		dip.activity.Show()
 		loading := container.NewCenter(container.NewVBox(
@@ -242,7 +257,7 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info deviceInfo) fyne.C
 				}
 			}
 			dip.app.devicePanel.refreshDevices()
-			dip.LoadDeviceInfo("")
+			dip.LoadDeviceInfo(serial)
 		}()
 	})
 	disconnectBtn.Importance = widget.DangerImportance
@@ -283,6 +298,57 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info deviceInfo) fyne.C
 		widget.NewSeparator(),
 		primaryActions,
 		secondaryActions,
+	)
+}
+
+// buildDisconnectedView creates the info panel content for a disconnected device.
+func (dip *DeviceInfoPanel) buildDisconnectedView(serial string) fyne.CanvasObject {
+	// Try to get the device name from known devices
+	name := serial
+	if dev, ok := dip.app.devicePanel.GetDevice(serial); ok && dev.Model != "" {
+		name = dev.Model
+	}
+
+	title := widget.NewLabelWithStyle(name, fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+
+	msg := widget.NewLabel("This device is not connected")
+	msg.TextStyle = fyne.TextStyle{Italic: true}
+	msg.Alignment = fyne.TextAlignCenter
+
+	reconnectBtn := widget.NewButtonWithIcon("Reconnect", theme.MediaReplayIcon(), func() {
+		go func() {
+			dip.app.logsPanel.Log("Reconnecting to " + serial + "...")
+			if err := dip.app.adbClient.Connect(serial); err != nil {
+				dip.app.logsPanel.Log("[ERROR]Reconnect " + serial + ": " + err.Error())
+			} else {
+				dip.app.logsPanel.Log("[OK]Reconnected " + serial)
+			}
+			dip.app.devicePanel.refreshDevices()
+			// Reload info if now connected
+			if dip.app.devicePanel.IsConnected(serial) {
+				dip.LoadDeviceInfo(serial)
+			}
+		}()
+	})
+	reconnectBtn.Importance = widget.HighImportance
+
+	removeBtn := widget.NewButtonWithIcon("Remove", theme.ContentRemoveIcon(), func() {
+		dip.app.devicePanel.RemoveDevice(serial)
+		dip.LoadDeviceInfo("")
+	})
+	removeBtn.Importance = widget.DangerImportance
+
+	actions := container.NewGridWithColumns(2, reconnectBtn, removeBtn)
+
+	return container.NewVBox(
+		widget.NewSeparator(),
+		container.NewCenter(title),
+		widget.NewSeparator(),
+		layout.NewSpacer(),
+		container.NewCenter(msg),
+		layout.NewSpacer(),
+		widget.NewSeparator(),
+		actions,
 	)
 }
 
