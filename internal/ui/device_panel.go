@@ -471,6 +471,10 @@ func (dp *DevicePanel) refreshDevices() {
 
 	dp.mu.Lock()
 
+	// Capture old connection state for selected device
+	selectedSerial := dp.lastSelected
+	wasConnected := dp.connectedSet[selectedSerial]
+
 	// Build connected set from live ADB results
 	dp.connectedSet = make(map[string]bool, len(liveDevices))
 	for _, d := range liveDevices {
@@ -509,12 +513,22 @@ func (dp *DevicePanel) refreshDevices() {
 		}
 	}
 
+	// Capture new connection state
+	nowConnected := dp.connectedSet[selectedSerial]
+
 	dp.mu.Unlock()
 
 	// Persist known devices to config
 	dp.saveKnownDevices()
 
 	dp.updateList()
+
+	// Reload info panel if selected device's connection state changed
+	if selectedSerial != "" && wasConnected != nowConnected && dp.app.deviceInfoPanel != nil {
+		fyne.Do(func() {
+			dp.app.deviceInfoPanel.LoadDeviceInfo(selectedSerial)
+		})
+	}
 }
 
 // RemoveDevice permanently removes a device from the known list.
