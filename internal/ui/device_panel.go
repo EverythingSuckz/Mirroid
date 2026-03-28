@@ -207,6 +207,7 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 					delete(dp.checkedSerials, serial)
 				}
 				dp.mu.Unlock()
+				dp.syncSelectAllCheck()
 				dp.syncActionVisibility()
 			}
 		},
@@ -370,6 +371,19 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 		topSection, nil, nil, nil,
 		dp.deviceList,
 	)
+}
+
+// syncSelectAllCheck updates the header "select all" checkbox to reflect
+// whether every device is individually checked, without triggering its handler.
+func (dp *DevicePanel) syncSelectAllCheck() {
+	dp.mu.Lock()
+	allChecked := len(dp.devices) > 0 && len(dp.checkedSerials) == len(dp.devices)
+	dp.mu.Unlock()
+
+	savedHandler := dp.selectAllCheck.OnChanged
+	dp.selectAllCheck.OnChanged = nil
+	dp.selectAllCheck.SetChecked(allChecked)
+	dp.selectAllCheck.OnChanged = savedHandler
 }
 
 // syncActionVisibility shows context-sensitive bulk action buttons based on checked devices.
@@ -614,6 +628,7 @@ func (dp *DevicePanel) updateList() {
 			dp.app.setConnectedLayout(false)
 		}
 		dp.deviceList.Refresh()
+		dp.syncSelectAllCheck()
 		dp.syncActionVisibility()
 	})
 }
