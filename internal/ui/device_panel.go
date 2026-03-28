@@ -112,7 +112,7 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 			addrLabel.Truncation = fyne.TextTruncateEllipsis
 			typeLabel := widget.NewLabel("")
 			typeLabel.Truncation = fyne.TextTruncateEllipsis
-			statusLabel := widget.NewLabel("")
+			statusLabel := ttwidget.NewLabel("")
 			statusLabel.Truncation = fyne.TextTruncateEllipsis
 			return container.NewBorder(nil, nil,
 				widget.NewCheck("", nil), nil,
@@ -153,15 +153,23 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 				return "USB"
 			}())
 
-			// Status: Mirroring > Connected > Disconnected
+			// Status: Error > Mirroring > Connected > Disconnected
 			status := "Disconnected"
+			statusTip := ""
 			if connected {
 				status = "Connected"
-				if dp.app.runner != nil && dp.app.runner.IsRunningFor(d.Serial) {
-					status = "Mirroring"
+				if dp.app.runner != nil {
+					if dp.app.runner.IsRunningFor(d.Serial) {
+						status = "Mirroring"
+					} else if errMsg := dp.app.runner.LastErrorFor(d.Serial); errMsg != "" {
+						status = "Error"
+						statusTip = errMsg + " (check logs)"
+					}
 				}
 			}
-			cols.Objects[3].(*widget.Label).SetText(status)
+			statusLbl := cols.Objects[3].(*ttwidget.Label)
+			statusLbl.SetText(status)
+			statusLbl.SetToolTip(statusTip)
 
 			serial := d.Serial
 			check.OnChanged = nil

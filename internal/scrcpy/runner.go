@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"mirroid/internal/model"
@@ -22,6 +23,10 @@ type Runner struct {
 	mu         sync.Mutex
 	processes  []*Process
 
+	// failedSerials tracks the last error message for devices whose scrcpy
+	// process exited with an error. Cleared on next successful launch.
+	failedSerials map[string]string
+
 	// OnStateChange is called after the process list changes (launch, exit).
 	// The serial of the affected device is passed as argument.
 	OnStateChange func(serial string)
@@ -32,7 +37,7 @@ func NewRunner(scrcpyPath string) *Runner {
 	if scrcpyPath == "" {
 		scrcpyPath = "scrcpy"
 	}
-	return &Runner{scrcpyPath: scrcpyPath}
+	return &Runner{scrcpyPath: scrcpyPath, failedSerials: make(map[string]string)}
 }
 
 // Launch starts a scrcpy process for the given device and options.
@@ -61,6 +66,7 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 	proc := &Process{cmd: cmd, serial: serial}
 	r.mu.Lock()
 	r.processes = append(r.processes, proc)
+	delete(r.failedSerials, serial) // clear any previous error
 	r.mu.Unlock()
 
 	if r.OnStateChange != nil {
@@ -69,25 +75,40 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 
 	// read output in a goroutine
 	go func() {
+		var lastError string
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
-			logFn(scanner.Text())
+			line := scanner.Text()
+			logFn(line)
+			// Detect scrcpy server errors
+			if strings.Contains(line, "ERROR") {
+				// Extract the error message after "ERROR:"
+				if idx := strings.Index(line, "ERROR:"); idx >= 0 {
+					lastError = strings.TrimSpace(line[idx+len("ERROR:"):])
+				} else {
+					lastError = line
+				}
+			}
 		}
 
 		// wait for process exit
-		if err := cmd.Wait(); err != nil {
-			logFn(fmt.Sprintf("[scrcpy] process for %s exited with error: %v", serial, err))
+		exitErr := cmd.Wait()
+		if exitErr != nil {
+			logFn(fmt.Sprintf("[scrcpy] process for %s exited with error: %v", serial, exitErr))
 		} else {
 			logFn(fmt.Sprintf("[scrcpy] process for %s exited (code %d)", serial, cmd.ProcessState.ExitCode()))
 		}
 
-		// remove from tracked list
+		// remove from tracked list and record error if any
 		r.mu.Lock()
 		for i, p := range r.processes {
 			if p == proc {
 				r.processes = append(r.processes[:i], r.processes[i+1:]...)
 				break
 			}
+		}
+		if lastError != "" {
+			r.failedSerials[serial] = lastError
 		}
 		r.mu.Unlock()
 
@@ -162,4 +183,18 @@ func (r *Runner) IsRunningFor(serial string) bool {
 		}
 	}
 	return false
+}
+
+// LastErrorFor returns the last error message for a device, or empty if none.
+func (r *Runner) LastErrorFor(serial string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.failedSerials[serial]
+}
+
+// ClearErrorFor removes the stored error for a device.
+func (r *Runner) ClearErrorFor(serial string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.failedSerials, serial)
 }
