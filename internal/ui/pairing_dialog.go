@@ -178,7 +178,7 @@ func (pw *PairingWindow) startQRSession() {
 		pw.app.logsPanel.Log("[OK]Paired!")
 		pw.setStatus("Paired! Connecting...")
 
-		doPostPairConnect(pw.app, device)
+		doPostPairConnect(pw.app, device, pw.window)
 
 		fyne.Do(func() {
 			pw.activity.Stop()
@@ -281,7 +281,7 @@ func (pw *PairingWindow) showCodeEntryDialog(device *adb.MdnsDevice) {
 				}
 				pw.app.logsPanel.Log("[OK]Paired!")
 				pw.setStatus("Paired! Connecting...")
-				doPostPairConnect(pw.app, device)
+				doPostPairConnect(pw.app, device, pw.window)
 				fyne.Do(func() {
 					pw.activity.Stop()
 					pw.window.Close()
@@ -299,7 +299,7 @@ func (pw *PairingWindow) setStatus(s string) {
 	fyne.Do(func() { pw.statusLabel.SetText(s) })
 }
 
-func doPostPairConnect(a *App, device *adb.MdnsDevice) {
+func doPostPairConnect(a *App, device *adb.MdnsDevice, win fyne.Window) {
 	var connected bool
 	var dialogShown sync.Once
 
@@ -324,7 +324,7 @@ func doPostPairConnect(a *App, device *adb.MdnsDevice) {
 			dialogShown.Do(func() {
 				a.logsPanel.Log("[WARN]Connection taking long. Try toggling Wireless Debugging.")
 				fyne.Do(func() {
-					showToggleDebuggingDialog(a)
+					showToggleDebuggingDialog(win)
 				})
 			})
 		}
@@ -354,9 +354,7 @@ func doPostPairConnect(a *App, device *adb.MdnsDevice) {
 	}
 }
 
-func showToggleDebuggingDialog(a *App) {
-	win := a.window
-
+func showToggleDebuggingDialog(win fyne.Window) {
 	content := widget.NewLabel(
 		"Connection is taking longer than expected.\n\n" +
 			"On your phone:\n" +
