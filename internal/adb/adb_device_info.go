@@ -1,6 +1,7 @@
 package adb
 
 import (
+	"context"
 	"os/exec"
 	"strings"
 
@@ -24,8 +25,11 @@ type DeviceInfo struct {
 // GetDeviceInfo fetches detailed device properties via adb shell getprop,
 // dumpsys battery, and wm size.
 func (c *Client) GetDeviceInfo(serial string) DeviceInfo {
+	ctx, cancel := context.WithTimeout(context.Background(), adbLongTimeout)
+	defer cancel()
+
 	getProp := func(prop string) string {
-		cmd := exec.Command(c.adbPath, "-s", serial, "shell", "getprop", prop)
+		cmd := exec.CommandContext(ctx, c.adbPath, "-s", serial, "shell", "getprop", prop)
 		platform.HideConsole(cmd)
 		out, err := cmd.Output()
 		if err != nil {
@@ -34,7 +38,7 @@ func (c *Client) GetDeviceInfo(serial string) DeviceInfo {
 		return strings.TrimSpace(string(out))
 	}
 
-	battCmd := exec.Command(c.adbPath, "-s", serial, "shell", "dumpsys", "battery")
+	battCmd := exec.CommandContext(ctx, c.adbPath, "-s", serial, "shell", "dumpsys", "battery")
 	platform.HideConsole(battCmd)
 	battOut, _ := battCmd.Output()
 	battery := "-"
@@ -47,7 +51,7 @@ func (c *Client) GetDeviceInfo(serial string) DeviceInfo {
 		}
 	}
 
-	resCmd := exec.Command(c.adbPath, "-s", serial, "shell", "wm", "size")
+	resCmd := exec.CommandContext(ctx, c.adbPath, "-s", serial, "shell", "wm", "size")
 	platform.HideConsole(resCmd)
 	resOut, _ := resCmd.Output()
 	resolution := "-"
@@ -72,7 +76,9 @@ func (c *Client) GetDeviceInfo(serial string) DeviceInfo {
 
 // GetDeviceID returns the hardware serial (ro.serialno) for a connected device.
 func (c *Client) GetDeviceID(serial string) string {
-	cmd := exec.Command(c.adbPath, "-s", serial, "shell", "getprop", "ro.serialno")
+	ctx, cancel := context.WithTimeout(context.Background(), adbTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.adbPath, "-s", serial, "shell", "getprop", "ro.serialno")
 	platform.HideConsole(cmd)
 	out, err := cmd.Output()
 	if err != nil {
