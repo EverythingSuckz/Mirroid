@@ -183,16 +183,17 @@ func (a *App) buildMainUI() {
 
 	// Connected state
 	deviceSection := widget.NewCard("Devices", "", a.devicePanel.Build())
-	optionsSection := widget.NewCard("Options", "", a.optionsPanel.Build())
-	presetsSection := widget.NewCard("Presets", "", a.presetsPanel.Build())
 
 	topArea := deviceSection
 
-	// Bottom area: options/presets (shown for connected devices)
-	a.optionsContent = container.NewVScroll(container.NewVBox(
-		optionsSection,
-		presetsSection,
-	))
+	// Bottom area: options with inline preset controls in the header
+	optionsTitle := widget.NewLabelWithStyle("Options", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	presetControls := a.presetsPanel.Build()
+	optionsHeader := container.NewBorder(nil, nil, optionsTitle, presetControls)
+	optionsTabs := a.optionsPanel.Build()
+	optionsSection := container.NewVBox(optionsHeader, widget.NewSeparator(), optionsTabs)
+
+	a.optionsContent = container.NewVScroll(optionsSection)
 
 	// Disconnected hint (shown when selected device is offline)
 	hintIcon := canvas.NewImageFromResource(theme.ComputerIcon())

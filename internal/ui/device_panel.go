@@ -228,6 +228,9 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 		if changed && dp.app.deviceInfoPanel != nil {
 			go dp.app.deviceInfoPanel.LoadDeviceInfo(serial)
 		}
+		if changed && dp.app.presetsPanel != nil {
+			dp.app.presetsPanel.LoadPresetForDevice(serial)
+		}
 	}
 
 	dp.statusLabel = widget.NewLabel("")

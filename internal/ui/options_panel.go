@@ -36,6 +36,9 @@ type OptionsPanel struct {
 	hidMouse      *widget.Check
 
 	recordFile *widget.Entry
+
+	OnChanged func() // called when any option widget changes
+	syncing   bool   // suppresses OnChanged during SyncFromModel
 }
 
 // NewOptionsPanel creates a new options panel.
@@ -45,29 +48,35 @@ func NewOptionsPanel(app *App) *OptionsPanel {
 
 // Build creates the tabbed options UI.
 func (op *OptionsPanel) Build() fyne.CanvasObject {
+	op.syncing = true
+	defer func() { op.syncing = false }()
+
 	defaults := op.app.options
 
 	op.bitrate = widget.NewEntry()
 	op.bitrate.SetText(strconv.Itoa(defaults.Bitrate))
 	op.bitrate.SetPlaceHolder("Mbps")
 	op.bitrate.Validator = intValidator(0, 200)
+	op.bitrate.OnChanged = op.notifyChanged
 
 	op.maxSize = widget.NewEntry()
 	op.maxSize.SetPlaceHolder("e.g. 1920")
 	if defaults.MaxSize > 0 {
 		op.maxSize.SetText(strconv.Itoa(defaults.MaxSize))
 	}
+	op.maxSize.OnChanged = op.notifyChanged
 
 	op.maxFPS = widget.NewEntry()
 	op.maxFPS.SetPlaceHolder("e.g. 60")
 	if defaults.MaxFPS > 0 {
 		op.maxFPS.SetText(strconv.Itoa(defaults.MaxFPS))
 	}
+	op.maxFPS.OnChanged = op.notifyChanged
 
-	op.codec = widget.NewSelect([]string{"h264", "h265", "av1"}, nil)
+	op.codec = widget.NewSelect([]string{"h264", "h265", "av1"}, op.notifyChanged)
 	op.codec.SetSelected(defaults.Codec)
 
-	op.videoSrc = widget.NewSelect([]string{"display", "camera"}, nil)
+	op.videoSrc = widget.NewSelect([]string{"display", "camera"}, op.notifyChanged)
 	op.videoSrc.SetSelected(defaults.VideoSource)
 
 	videoTab := container.NewVBox(
@@ -82,10 +91,10 @@ func (op *OptionsPanel) Build() fyne.CanvasObject {
 		),
 	)
 
-	op.audioEnabled = widget.NewCheck("Enable Audio", nil)
+	op.audioEnabled = widget.NewCheck("Enable Audio", op.notifyChangedBool)
 	op.audioEnabled.SetChecked(defaults.AudioEnabled)
 
-	op.audioSource = widget.NewSelect([]string{"output", "mic", "playback"}, nil)
+	op.audioSource = widget.NewSelect([]string{"output", "mic", "playback"}, op.notifyChanged)
 	op.audioSource.SetSelected(defaults.AudioSource)
 
 	audioTab := container.NewVBox(
@@ -93,40 +102,41 @@ func (op *OptionsPanel) Build() fyne.CanvasObject {
 		labeledField("Source", op.audioSource),
 	)
 
-	op.fullscreen = widget.NewCheck("Fullscreen", nil)
+	op.fullscreen = widget.NewCheck("Fullscreen", op.notifyChangedBool)
 	op.fullscreen.SetChecked(defaults.Fullscreen)
 
-	op.borderless = widget.NewCheck("Borderless", nil)
+	op.borderless = widget.NewCheck("Borderless", op.notifyChangedBool)
 	op.borderless.SetChecked(defaults.Borderless)
 
-	op.alwaysOnTop = widget.NewCheck("Always on Top", nil)
+	op.alwaysOnTop = widget.NewCheck("Always on Top", op.notifyChangedBool)
 	op.alwaysOnTop.SetChecked(defaults.AlwaysOnTop)
 
 	op.windowTitle = widget.NewEntry()
 	op.windowTitle.SetPlaceHolder("Custom title")
 	op.windowTitle.SetText(defaults.WindowTitle)
+	op.windowTitle.OnChanged = op.notifyChanged
 
 	windowTab := container.NewVBox(
 		container.NewGridWithColumns(3, op.fullscreen, op.borderless, op.alwaysOnTop),
 		labeledField("Title", op.windowTitle),
 	)
 
-	op.rotation = widget.NewSelect([]string{"0", "1", "2", "3"}, nil)
+	op.rotation = widget.NewSelect([]string{"0", "1", "2", "3"}, op.notifyChanged)
 	op.rotation.SetSelected(strconv.Itoa(defaults.Rotation))
 
-	op.turnScreenOff = widget.NewCheck("Screen Off", nil)
+	op.turnScreenOff = widget.NewCheck("Screen Off", op.notifyChangedBool)
 	op.turnScreenOff.SetChecked(defaults.TurnScreenOff)
 
-	op.clipboardSync = widget.NewCheck("Clipboard", nil)
+	op.clipboardSync = widget.NewCheck("Clipboard", op.notifyChangedBool)
 	op.clipboardSync.SetChecked(defaults.ClipboardSync)
 
-	op.stayAwake = widget.NewCheck("Stay Awake", nil)
+	op.stayAwake = widget.NewCheck("Stay Awake", op.notifyChangedBool)
 	op.stayAwake.SetChecked(defaults.StayAwake)
 
-	op.hidKeyboard = widget.NewCheck("HID Keyboard", nil)
+	op.hidKeyboard = widget.NewCheck("HID Keyboard", op.notifyChangedBool)
 	op.hidKeyboard.SetChecked(defaults.HIDKeyboard)
 
-	op.hidMouse = widget.NewCheck("HID Mouse", nil)
+	op.hidMouse = widget.NewCheck("HID Mouse", op.notifyChangedBool)
 	op.hidMouse.SetChecked(defaults.HIDMouse)
 
 	controlsTab := container.NewVBox(
@@ -137,6 +147,7 @@ func (op *OptionsPanel) Build() fyne.CanvasObject {
 	op.recordFile = widget.NewEntry()
 	op.recordFile.SetPlaceHolder("Path to recording file")
 	op.recordFile.SetText(defaults.RecordFile)
+	op.recordFile.OnChanged = op.notifyChanged
 
 	recordTab := container.NewVBox(op.recordFile)
 
@@ -175,6 +186,9 @@ func (op *OptionsPanel) SyncToModel(opts *model.ScrcpyOptions) {
 
 // SyncFromModel sets all widgets from a ScrcpyOptions.
 func (op *OptionsPanel) SyncFromModel(opts model.ScrcpyOptions) {
+	op.syncing = true
+	defer func() { op.syncing = false }()
+
 	op.bitrate.SetText(strconv.Itoa(opts.Bitrate))
 	if opts.MaxSize > 0 {
 		op.maxSize.SetText(strconv.Itoa(opts.MaxSize))
@@ -201,6 +215,18 @@ func (op *OptionsPanel) SyncFromModel(opts model.ScrcpyOptions) {
 	op.hidKeyboard.SetChecked(opts.HIDKeyboard)
 	op.hidMouse.SetChecked(opts.HIDMouse)
 	op.videoSrc.SetSelected(opts.VideoSource)
+}
+
+func (op *OptionsPanel) notifyChanged(_ string) {
+	if !op.syncing && op.OnChanged != nil {
+		op.OnChanged()
+	}
+}
+
+func (op *OptionsPanel) notifyChangedBool(_ bool) {
+	if !op.syncing && op.OnChanged != nil {
+		op.OnChanged()
+	}
 }
 
 func labeledField(label string, obj fyne.CanvasObject) fyne.CanvasObject {

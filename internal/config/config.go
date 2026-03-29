@@ -70,6 +70,10 @@ func (c *Config) devicesPath() string {
 	return filepath.Join(c.dir, "devices.json")
 }
 
+func (c *Config) devicePresetsPath() string {
+	return filepath.Join(c.dir, "device_presets.json")
+}
+
 // SaveAppConfig persists the current app config to disk.
 func (c *Config) SaveAppConfig() error {
 	data, err := json.MarshalIndent(c.AppConf, "", "    ")
@@ -119,6 +123,31 @@ func (c *Config) LoadKnownDevices() ([]adb.Device, error) {
 		return nil, fmt.Errorf("config: devices file is corrupt: %w", err)
 	}
 	return devices, nil
+}
+
+// LoadDevicePresets reads the device-to-preset mapping from disk.
+func (c *Config) LoadDevicePresets() (map[string]string, error) {
+	result := make(map[string]string)
+	data, err := os.ReadFile(c.devicePresetsPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return result, nil
+		}
+		return nil, fmt.Errorf("config: could not read device presets: %w", err)
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("config: device presets file is corrupt: %w", err)
+	}
+	return result, nil
+}
+
+// SaveDevicePresets writes the device-to-preset mapping to disk.
+func (c *Config) SaveDevicePresets(dp map[string]string) error {
+	data, err := json.MarshalIndent(dp, "", "    ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(c.devicePresetsPath(), data, 0o644)
 }
 
 // SaveKnownDevices writes the known devices list to disk.
