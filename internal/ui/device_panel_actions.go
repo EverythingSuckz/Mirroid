@@ -58,7 +58,7 @@ func (dp *DevicePanel) ReconnectDevice(serial string) {
 		dp.mu.Lock()
 		delete(dp.reconnectingSet, serial)
 		if err != nil {
-			dp.reconnectErrors[serial] = "Connection failed"
+			dp.reconnectErrors[serial] = err.Error()
 		}
 		dp.mu.Unlock()
 
