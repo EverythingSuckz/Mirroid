@@ -42,22 +42,24 @@ type ProgressFunc func(received, total int64)
 
 // Updater checks for and applies updates from GitHub Releases.
 type Updater struct {
-	owner   string
-	repo    string
-	current string
-	client  *http.Client // short timeout for API calls
-	baseURL string       // GitHub API base URL (overridable for tests)
+	owner    string
+	repo     string
+	current  string
+	client   *http.Client // short timeout for API calls
+	dlClient *http.Client // no timeout for large downloads
+	baseURL  string       // GitHub API base URL (overridable for tests)
 }
 
 // New creates an Updater for the given current version.
 // The version should be in "MAJOR.MINOR.PATCH" format (no leading "v").
 func New(currentVersion string) *Updater {
 	return &Updater{
-		owner:   "EverythingSuckz",
-		repo:    "Mirroid",
-		current: strings.TrimPrefix(currentVersion, "v"),
-		client:  &http.Client{Timeout: 30 * time.Second},
-		baseURL: "https://api.github.com",
+		owner:    "EverythingSuckz",
+		repo:     "Mirroid",
+		current:  strings.TrimPrefix(currentVersion, "v"),
+		client:   &http.Client{Timeout: 30 * time.Second},
+		dlClient: &http.Client{},
+		baseURL:  "https://api.github.com",
 	}
 }
 
@@ -148,10 +150,7 @@ func (u *Updater) FetchChangelog(tagName string) string {
 // destDir should be on the same filesystem as the target for atomic rename.
 // progress is called periodically with bytes received and total size.
 func (u *Updater) Download(assetURL, destDir string, progress ProgressFunc) (string, error) {
-	// Use a separate client with no timeout for large downloads.
-	// The API client has a 30s timeout which would kill multi-MB transfers.
-	dlClient := &http.Client{}
-	resp, err := dlClient.Get(assetURL)
+	resp, err := u.dlClient.Get(assetURL)
 	if err != nil {
 		return "", fmt.Errorf("updater: download failed: %w", err)
 	}

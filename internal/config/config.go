@@ -13,7 +13,6 @@ import (
 
 const appDirName = "Mirroid"
 
-// Config manages application configuration and presets.
 type Config struct {
 	dir     string
 	AppConf AppConfig
@@ -49,7 +48,11 @@ func New() (*Config, error) {
 	}
 
 	// load existing config if present
-	if data, err := os.ReadFile(c.configPath()); err == nil {
+	if data, err := os.ReadFile(c.configPath()); err != nil {
+		if !os.IsNotExist(err) {
+			slog.Warn("could not read config file, using defaults", "error", err)
+		}
+	} else {
 		if err := json.Unmarshal(data, &c.AppConf); err != nil {
 			slog.Warn("config file is malformed, using defaults", "error", err)
 		}
@@ -74,7 +77,6 @@ func (c *Config) devicePresetsPath() string {
 	return filepath.Join(c.dir, "device_presets.json")
 }
 
-// SaveAppConfig persists the current app config to disk.
 func (c *Config) SaveAppConfig() error {
 	data, err := json.MarshalIndent(c.AppConf, "", "    ")
 	if err != nil {

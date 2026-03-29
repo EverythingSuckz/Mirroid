@@ -41,12 +41,10 @@ type OptionsPanel struct {
 	syncing   bool   // suppresses OnChanged during SyncFromModel
 }
 
-// NewOptionsPanel creates a new options panel.
 func NewOptionsPanel(app *App) *OptionsPanel {
 	return &OptionsPanel{app: app}
 }
 
-// Build creates the tabbed options UI.
 func (op *OptionsPanel) Build() fyne.CanvasObject {
 	op.syncing = true
 	defer func() { op.syncing = false }()
@@ -73,10 +71,10 @@ func (op *OptionsPanel) Build() fyne.CanvasObject {
 	}
 	op.maxFPS.OnChanged = op.notifyChanged
 
-	op.codec = widget.NewSelect([]string{"h264", "h265", "av1"}, op.notifyChanged)
+	op.codec = widget.NewSelect(model.Codecs, op.notifyChanged)
 	op.codec.SetSelected(defaults.Codec)
 
-	op.videoSrc = widget.NewSelect([]string{"display", "camera"}, op.notifyChanged)
+	op.videoSrc = widget.NewSelect(model.VideoSources, op.notifyChanged)
 	op.videoSrc.SetSelected(defaults.VideoSource)
 
 	videoTab := container.NewVBox(
@@ -94,7 +92,7 @@ func (op *OptionsPanel) Build() fyne.CanvasObject {
 	op.audioEnabled = widget.NewCheck("Enable Audio", op.notifyChangedBool)
 	op.audioEnabled.SetChecked(defaults.AudioEnabled)
 
-	op.audioSource = widget.NewSelect([]string{"output", "mic", "playback"}, op.notifyChanged)
+	op.audioSource = widget.NewSelect(model.AudioSources, op.notifyChanged)
 	op.audioSource.SetSelected(defaults.AudioSource)
 
 	audioTab := container.NewVBox(
@@ -217,17 +215,14 @@ func (op *OptionsPanel) SyncFromModel(opts model.ScrcpyOptions) {
 	op.videoSrc.SetSelected(opts.VideoSource)
 }
 
-func (op *OptionsPanel) notifyChanged(_ string) {
+func (op *OptionsPanel) notify() {
 	if !op.syncing && op.OnChanged != nil {
 		op.OnChanged()
 	}
 }
 
-func (op *OptionsPanel) notifyChangedBool(_ bool) {
-	if !op.syncing && op.OnChanged != nil {
-		op.OnChanged()
-	}
-}
+func (op *OptionsPanel) notifyChanged(_ string)  { op.notify() }
+func (op *OptionsPanel) notifyChangedBool(_ bool) { op.notify() }
 
 func labeledField(label string, obj fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewVBox(widget.NewLabel(label), obj)

@@ -1,11 +1,14 @@
 package adb
 
 import (
-	"mirroid/internal/platform"
 	"bufio"
 	"fmt"
+	"net"
 	"os/exec"
 	"strings"
+
+	"mirroid/internal/model"
+	"mirroid/internal/platform"
 )
 
 // Device represents a connected Android device.
@@ -23,17 +26,30 @@ func (d Device) String() string {
 	return d.Serial
 }
 
-// Client wraps ADB command execution.
+// isIPPort returns true if serial looks like a real IP:port address
+// (as opposed to mDNS service names like "adb-xxx._adb-tls-connect._tcp").
+func isIPPort(serial string) bool {
+	host, _, err := net.SplitHostPort(serial)
+	if err != nil {
+		return false
+	}
+	return net.ParseIP(host) != nil
+}
+
 type Client struct {
 	adbPath string
 }
 
-// NewClient creates a new ADB client.
 func NewClient(adbPath string) *Client {
 	if adbPath == "" {
 		adbPath = "adb"
 	}
 	return &Client{adbPath: adbPath}
+}
+
+// Path returns the configured adb binary path.
+func (c *Client) Path() string {
+	return c.adbPath
 }
 
 // GetDevices runs `adb devices -l` and parses the output.
@@ -68,23 +84,23 @@ func (c *Client) GetDevices() ([]Device, error) {
 			continue
 		}
 
-		model := ""
+		devModel := ""
 		for _, part := range parts[2:] {
 			if strings.HasPrefix(part, "model:") {
-				model = strings.TrimPrefix(part, "model:")
+				devModel = strings.TrimPrefix(part, "model:")
 				break
 			}
 		}
 
-		source := "usb"
+		source := model.SourceUSB
 		if strings.Contains(serial, ":") {
-			source = "wireless"
+			source = model.SourceWireless
 		}
 
 		devices = append(devices, Device{
 			Serial: serial,
-			Model:  model,
-			Source: source,
+			Model:  devModel,
+			Source:  source,
 		})
 	}
 
@@ -99,8 +115,8 @@ func (c *Client) GetDevices() ([]Device, error) {
 		}
 		if idx, ok := seen[key]; ok {
 			// prefer IP:port over mDNS service name
-			isIP := strings.ContainsAny(d.Serial, "0123456789") && strings.Contains(d.Serial, ".")
-			existingIsIP := strings.ContainsAny(result[idx].Serial, "0123456789") && strings.Contains(result[idx].Serial, ".")
+			isIP := isIPPort(d.Serial)
+			existingIsIP := isIPPort(result[idx].Serial)
 			if isIP && !existingIsIP {
 				result[idx] = d
 			}
@@ -147,7 +163,10 @@ func (c *Client) Disconnect(addr string) error {
 	cmd := exec.Command(c.adbPath, "disconnect", addr)
 	platform.HideConsole(cmd)
 	_, err := cmd.CombinedOutput()
-	return err
+	if err != nil {
+		return fmt.Errorf("adb disconnect %s: %w", addr, err)
+	}
+	return nil
 }
 
 // VerifyConnection checks if a device is actually reachable by running a shell command.
@@ -160,3 +179,4 @@ func (c *Client) VerifyConnection(serial string) bool {
 	}
 	return strings.TrimSpace(string(out)) == "ok"
 }
+

@@ -28,7 +28,6 @@ type PresetsPanel struct {
 	snapshot     model.ScrcpyOptions         // clean state to restore on discard
 }
 
-// NewPresetsPanel creates a new presets panel.
 func NewPresetsPanel(app *App) *PresetsPanel {
 	return &PresetsPanel{
 		app:           app,
@@ -37,7 +36,6 @@ func NewPresetsPanel(app *App) *PresetsPanel {
 	}
 }
 
-// Build creates the compact preset controls (dropdown + save/discard/delete icons).
 func (pp *PresetsPanel) Build() fyne.CanvasObject {
 	presets, err := pp.app.cfg.LoadPresets()
 	if err != nil {

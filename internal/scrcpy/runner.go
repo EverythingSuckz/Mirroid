@@ -45,7 +45,6 @@ type Runner struct {
 	OnStateChange func(serial string)
 }
 
-// NewRunner creates a scrcpy runner.
 func NewRunner(scrcpyPath string) *Runner {
 	if scrcpyPath == "" {
 		scrcpyPath = "scrcpy"
@@ -127,6 +126,10 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 			}
 		}
 
+		if err := scanner.Err(); err != nil {
+			logFn(fmt.Sprintf("[scrcpy] stdout read error: %v", err))
+		}
+
 		// wait for process exit
 		exitErr := cmd.Wait()
 		if exitErr != nil {
@@ -162,18 +165,9 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 
 // CommandPreview returns the full command string that would be executed.
 func (r *Runner) CommandPreview(serial string, opts model.ScrcpyOptions) string {
-	args := opts.BuildCommand(r.scrcpyPath, serial)
-	result := ""
-	for i, arg := range args {
-		if i > 0 {
-			result += " "
-		}
-		result += arg
-	}
-	return result
+	return strings.Join(opts.BuildCommand(r.scrcpyPath, serial), " ")
 }
 
-// StopAll terminates all running scrcpy processes gracefully, then kills stragglers.
 func (r *Runner) StopAll() {
 	r.mu.Lock()
 	procs := make([]*Process, len(r.processes))
@@ -188,7 +182,6 @@ func (r *Runner) StopAll() {
 	}
 }
 
-// StopFor terminates scrcpy processes for a specific device serial.
 func (r *Runner) StopFor(serial string) {
 	r.mu.Lock()
 	var toKill []*Process
@@ -206,14 +199,12 @@ func (r *Runner) StopFor(serial string) {
 	}
 }
 
-// RunningCount returns the number of running scrcpy processes.
 func (r *Runner) RunningCount() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.processes)
 }
 
-// IsRunningFor returns true if scrcpy is currently running for the given serial.
 func (r *Runner) IsRunningFor(serial string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -225,22 +216,18 @@ func (r *Runner) IsRunningFor(serial string) bool {
 	return false
 }
 
-// StateFor returns the current process state for a device serial.
-// Returns StateIdle if no process is tracked.
 func (r *Runner) StateFor(serial string) ProcessState {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.deviceStates[serial]
 }
 
-// LastErrorFor returns the last error message for a device, or empty if none.
 func (r *Runner) LastErrorFor(serial string) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.failedSerials[serial]
 }
 
-// ClearErrorFor removes the stored error for a device.
 func (r *Runner) ClearErrorFor(serial string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
