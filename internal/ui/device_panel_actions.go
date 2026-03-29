@@ -8,7 +8,6 @@ import (
 )
 
 // parseHostFromAddr extracts the host/IP from an address that may include a port.
-// Uses net.SplitHostPort for correct IPv6 handling (e.g. "[fe80::1]:5555").
 // Returns addr unchanged if no port is present.
 func parseHostFromAddr(addr string) string {
 	host, _, err := net.SplitHostPort(addr)
@@ -30,7 +29,7 @@ func (dp *DevicePanel) ReconnectDevice(serial string) {
 	delete(dp.reconnectErrors, serial)
 	dp.mu.Unlock()
 
-	// Clear ignoredAddrs so refreshDevices won't filter the device back out
+	// clear ignoredAddrs so refreshDevices won't filter the device back out
 	dp.app.ignoredAddrs.Delete(serial)
 	if host := parseHostFromAddr(serial); host != serial {
 		dp.app.ignoredAddrs.Delete(host)
@@ -57,7 +56,7 @@ func (dp *DevicePanel) ReconnectDevice(serial string) {
 
 		dp.refreshDevices()
 
-		// Reload info panel if this device is selected
+		// reload info panel if this device is selected
 		dp.mu.Lock()
 		selected := dp.lastSelected == serial
 		dp.mu.Unlock()

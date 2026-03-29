@@ -167,26 +167,8 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info adb.DeviceInfo) fy
 				dip.app.logsPanel.Log("[ERROR]Disconnect: " + err.Error())
 			} else {
 				dip.app.logsPanel.Log("[OK]Disconnected " + serial)
-				// block this device from reconnecting via serial, host/IP,
-				// and hardware device ID (ro.serialno).
-				dip.app.ignoredAddrs.Store(serial, true)
-				ip := parseHostFromAddr(serial)
-				dip.app.ignoredAddrs.Store(ip, true)
-				if info.DeviceID != "" && info.DeviceID != "-" {
-					dip.app.ignoredAddrs.Store("devid:"+info.DeviceID, true)
-				}
-
-				// sweep remaining ADB entries to disconnect mDNS aliases.
-				// match by hardware device ID for precision and avoids
-				// disconnecting unrelated devices that share the same model.
-				remaining, _ := dip.app.adbClient.GetDevices()
-				for _, d := range remaining {
-					rid := dip.app.adbClient.GetDeviceID(d.Serial)
-					if rid != "" && info.DeviceID != "" && info.DeviceID != "-" && rid == info.DeviceID {
-						dip.app.ignoredAddrs.Store(d.Serial, true)
-						_ = dip.app.adbClient.Disconnect(d.Serial)
-					}
-				}
+				dip.app.ignoreDevice(serial, info.DeviceID)
+				dip.app.disconnectAliases(map[string]bool{info.DeviceID: true})
 			}
 			dip.app.devicePanel.refreshDevices()
 			dip.LoadDeviceInfo(serial)

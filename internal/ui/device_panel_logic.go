@@ -71,7 +71,7 @@ func (dp *DevicePanel) refreshDevices() {
 			oldSerial := dp.devices[idx].Serial
 			dp.devices[idx].Serial = d.Serial
 			dp.devices[idx].Source = d.Source
-			// migrate all serial-keyed state from oldSerial to newSerial
+			// migrate serial-keyed state
 			delete(dp.connectedSet, oldSerial)
 			dp.connectedSet[d.Serial] = true
 			if dp.checkedSerials[oldSerial] {

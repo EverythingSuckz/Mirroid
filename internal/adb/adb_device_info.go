@@ -71,7 +71,6 @@ func (c *Client) GetDeviceInfo(serial string) DeviceInfo {
 }
 
 // GetDeviceID returns the hardware serial (ro.serialno) for a connected device.
-// Returns empty string on failure.
 func (c *Client) GetDeviceID(serial string) string {
 	cmd := exec.Command(c.adbPath, "-s", serial, "shell", "getprop", "ro.serialno")
 	platform.HideConsole(cmd)

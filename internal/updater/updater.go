@@ -149,7 +149,6 @@ func (u *Updater) FetchChangelog(tagName string) string {
 
 // Download fetches the asset at the given URL to a temporary file in destDir.
 // destDir should be on the same filesystem as the target for atomic rename.
-// ctx controls cancellation; progress is called periodically with bytes received and total size.
 func (u *Updater) Download(ctx context.Context, assetURL, destDir string, progress ProgressFunc) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, nil)
 	if err != nil {
