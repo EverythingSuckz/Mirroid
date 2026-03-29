@@ -100,6 +100,11 @@ func (dp *DevicePanel) OnMdnsDevices(mdnsDevices []adb.MdnsDevice) {
 
 		if !alreadyConnected {
 			if err := dp.app.adbClient.Connect(md.Addr); err == nil {
+				// verify this isn't an alias of a device the user disconnected
+				if devID := dp.app.adbClient.GetDeviceID(md.Addr); devID != "" && dp.app.isIgnored("devid:"+devID) {
+					_ = dp.app.adbClient.Disconnect(md.Addr)
+					continue
+				}
 				dp.app.logsPanel.Log(fmt.Sprintf("mDNS: Connected to %s", md.Addr))
 				go dp.refreshDevices()
 			}
