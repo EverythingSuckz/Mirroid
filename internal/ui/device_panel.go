@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 
 	"fyne.io/fyne/v2"
@@ -235,24 +234,15 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 
 	dp.disconnectBtn = ttwidget.NewButtonWithIcon("", theme.LogoutIcon(), func() {
 		go func() {
-			// track models of disconnected devices for the alias sweep.
-			// stored locally (not in ignoredAddrs) to avoid permanently
-			// blocking unrelated devices that share the same model name.
-			disconnectedModels := make(map[string]bool)
+			// collect hardware device IDs before disconnecting so the
+			// sweep can precisely match aliases of the same physical device.
+			disconnectedDevIDs := make(map[string]bool)
 
 			for _, s := range dp.SelectedDevices() {
 				dp.app.runner.StopFor(s)
 
-				// Look up model for this serial
-				model := ""
-				dp.mu.Lock()
-				for _, d := range dp.devices {
-					if d.Serial == s {
-						model = d.Model
-						break
-					}
-				}
-				dp.mu.Unlock()
+				// fetch hardware device ID while still connected
+				devID := dp.app.adbClient.GetDeviceID(s)
 
 				if err := dp.app.adbClient.Disconnect(s); err != nil {
 					dp.app.logsPanel.Log("[ERROR]Disconnect: " + err.Error())
@@ -260,23 +250,25 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 					dp.app.logsPanel.Log("[OK]Disconnected " + s)
 				}
 
-				// Block reconnection via serial and host/IP
+				// block reconnection via serial, host/IP, and device ID
 				dp.app.ignoredAddrs.Store(s, true)
 				if host := parseHostFromAddr(s); host != s {
 					dp.app.ignoredAddrs.Store(host, true)
 				}
-				if model != "" {
-					disconnectedModels[model] = true
-					disconnectedModels[strings.ReplaceAll(model, " ", "_")] = true
+				if devID != "" {
+					dp.app.ignoredAddrs.Store("devid:"+devID, true)
+					disconnectedDevIDs[devID] = true
 				}
 			}
 
-			// Sweep remaining ADB entries to catch mDNS aliases.
-			// Only disconnect — don't persist to ignoredAddrs so that
-			// different physical devices with the same model can reconnect.
+			// Sweep remaining ADB entries to disconnect mDNS aliases.
+			// Match by hardware device ID for precision — avoids
+			// disconnecting unrelated devices that share the same model.
 			remaining, _ := dp.app.adbClient.GetDevices()
 			for _, d := range remaining {
-				if d.Model != "" && disconnectedModels[d.Model] {
+				rid := dp.app.adbClient.GetDeviceID(d.Serial)
+				if rid != "" && disconnectedDevIDs[rid] {
+					dp.app.ignoredAddrs.Store(d.Serial, true)
 					_ = dp.app.adbClient.Disconnect(d.Serial)
 				}
 			}
