@@ -21,7 +21,7 @@ func (dp *DevicePanel) refreshDevices() {
 		return
 	}
 
-	// Filter out explicitly ignored devices (by model, serial, or IP)
+	// filter out explicitly ignored devices (by model, serial, or IP)
 	var filtered []adb.Device
 	for _, d := range liveDevices {
 		ignored := false
@@ -41,7 +41,7 @@ func (dp *DevicePanel) refreshDevices() {
 
 	dp.mu.Lock()
 
-	// Capture old connection state for selected device
+	// capture old connection state for selected device
 	selectedSerial := dp.lastSelected
 	wasConnected := dp.connectedSet[selectedSerial]
 
@@ -53,8 +53,8 @@ func (dp *DevicePanel) refreshDevices() {
 		delete(dp.reconnectErrors, d.Serial)
 	}
 
-	// Merge live devices into known devices list.
-	// Match by serial first, then by model to avoid duplicates when
+	// merge live devices into known devices list.
+	// match by serial first, then by model to avoid duplicates when
 	// ADB reports the same device under a different serial (mDNS alias vs IP:port).
 	knownBySerial := make(map[string]int, len(dp.devices))
 	knownByModel := make(map[string]int, len(dp.devices))
@@ -66,40 +66,55 @@ func (dp *DevicePanel) refreshDevices() {
 	}
 	for _, d := range liveDevices {
 		if idx, exists := knownBySerial[d.Serial]; exists {
-			// Exact serial match — update metadata
+			// exact serial match and update metadata
 			dp.devices[idx].Model = d.Model
 			dp.devices[idx].Source = d.Source
 		} else if idx, exists := knownByModel[d.Model]; d.Model != "" && exists {
-			// Same model, different serial (mDNS alias changed) — update the existing entry
+			// same model, different serial (mDNS alias changed) update the existing entry
 			oldSerial := dp.devices[idx].Serial
 			dp.devices[idx].Serial = d.Serial
 			dp.devices[idx].Source = d.Source
-			// Update connectedSet to use the new serial
+			// migrate all serial-keyed state from oldSerial to newSerial
 			delete(dp.connectedSet, oldSerial)
 			dp.connectedSet[d.Serial] = true
+			if dp.checkedSerials[oldSerial] {
+				delete(dp.checkedSerials, oldSerial)
+				dp.checkedSerials[d.Serial] = true
+			}
+			if dp.reconnectingSet[oldSerial] {
+				delete(dp.reconnectingSet, oldSerial)
+				dp.reconnectingSet[d.Serial] = true
+			}
+			if errMsg, ok := dp.reconnectErrors[oldSerial]; ok {
+				delete(dp.reconnectErrors, oldSerial)
+				dp.reconnectErrors[d.Serial] = errMsg
+			}
+			if dp.lastSelected == oldSerial {
+				dp.lastSelected = d.Serial
+				selectedSerial = d.Serial
+			}
 		} else {
-			// Truly new device
+			// truly new device
 			dp.devices = append(dp.devices, d)
 		}
 	}
 
-	// Capture new connection state
+	// capture new connection state
 	nowConnected := dp.connectedSet[selectedSerial]
 
 	dp.mu.Unlock()
 
-	// Persist known devices to config
 	dp.saveKnownDevices()
 
-	// Auto-clear errors from exited processes so "Error" shows for one
-	// refresh cycle (~3 s) then transitions back to "Connected".
+	// auto-clear errors from exited processes so "Error" shows for one
+	// refresh cycle (~3 s) then transitions back to "Connected"
 	if dp.app.runner != nil {
 		dp.app.runner.ClearExitedErrors()
 	}
 
 	dp.updateList()
 
-	// Reload info panel if selected device's connection state changed
+	// reload info panel if selected device's connection state changed
 	if selectedSerial != "" && wasConnected != nowConnected && dp.app.deviceInfoPanel != nil {
 		fyne.Do(func() {
 			dp.app.deviceInfoPanel.LoadDeviceInfo(selectedSerial)
@@ -183,4 +198,3 @@ func (dp *DevicePanel) IsReconnecting(serial string) bool {
 	defer dp.mu.Unlock()
 	return dp.reconnectingSet[serial]
 }
-
