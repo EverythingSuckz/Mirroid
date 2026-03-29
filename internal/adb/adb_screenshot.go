@@ -2,6 +2,7 @@ package adb
 
 import (
 	"fmt"
+	"log"
 	"os/exec"
 
 	"mirroid/internal/platform"
@@ -19,14 +20,18 @@ func (c *Client) TakeScreenshot(serial, destPath string) error {
 
 	pullCmd := exec.Command(c.adbPath, "-s", serial, "pull", "/sdcard/mirroid_screenshot.png", destPath)
 	platform.HideConsole(pullCmd)
-	pullOut, err := pullCmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("pull failed: %s (%w)", string(pullOut), err)
+	pullOut, pullErr := pullCmd.CombinedOutput()
+
+	// always attempt to remove the temp file from the device
+	cleanupCmd := exec.Command(c.adbPath, "-s", serial, "shell", "rm", "/sdcard/mirroid_screenshot.png")
+	platform.HideConsole(cleanupCmd)
+	if cleanupErr := cleanupCmd.Run(); cleanupErr != nil {
+		log.Printf("warning: failed to remove device temp file /sdcard/mirroid_screenshot.png: %v", cleanupErr)
 	}
 
-	cleanCmd := exec.Command(c.adbPath, "-s", serial, "shell", "rm", "/sdcard/mirroid_screenshot.png")
-	platform.HideConsole(cleanCmd)
-	_ = cleanCmd.Run()
+	if pullErr != nil {
+		return fmt.Errorf("pull failed: %s (%w)", string(pullOut), pullErr)
+	}
 
 	return nil
 }
