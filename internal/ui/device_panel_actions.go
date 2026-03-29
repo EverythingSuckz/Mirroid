@@ -2,10 +2,22 @@ package ui
 
 import (
 	"fmt"
+	"net"
 	"strings"
 
 	"mirroid/internal/adb"
 )
+
+// parseHostFromAddr extracts the host/IP from an address that may include a port.
+// Uses net.SplitHostPort for correct IPv6 handling (e.g. "[fe80::1]:5555").
+// Returns addr unchanged if no port is present.
+func parseHostFromAddr(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	return host
+}
 
 // ReconnectDevice attempts to reconnect a disconnected device.
 // It tracks the reconnecting state, disables buttons, and updates the UI.
@@ -29,8 +41,8 @@ func (dp *DevicePanel) ReconnectDevice(serial string) {
 
 	// Clear ignoredAddrs so refreshDevices won't filter the device back out
 	dp.app.ignoredAddrs.Delete(serial)
-	if idx := strings.Index(serial, ":"); idx > 0 {
-		dp.app.ignoredAddrs.Delete(serial[:idx])
+	if host := parseHostFromAddr(serial); host != serial {
+		dp.app.ignoredAddrs.Delete(host)
 	}
 	if devModel != "" {
 		dp.app.ignoredAddrs.Delete(devModel)
@@ -91,10 +103,7 @@ func (dp *DevicePanel) RemoveDevice(serial string) {
 // OnMdnsDevices handles devices discovered via mDNS.
 func (dp *DevicePanel) OnMdnsDevices(mdnsDevices []adb.MdnsDevice) {
 	for _, md := range mdnsDevices {
-		ip := md.Addr
-		if idx := strings.Index(ip, ":"); idx > 0 {
-			ip = ip[:idx]
-		}
+		ip := parseHostFromAddr(md.Addr)
 		if dp.app.isIgnored(ip) {
 			continue
 		}

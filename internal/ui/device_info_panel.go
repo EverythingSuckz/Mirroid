@@ -172,10 +172,7 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info adb.DeviceInfo) fy
 				// Block this device from reconnecting via IP, model name,
 				// and serial (covers mDNS alias serials too).
 				dip.app.ignoredAddrs.Store(serial, true)
-				ip := serial
-				if idx := strings.Index(ip, ":"); idx > 0 {
-					ip = ip[:idx]
-				}
+				ip := parseHostFromAddr(serial)
 				dip.app.ignoredAddrs.Store(ip, true)
 
 				if info.Model != "" {
