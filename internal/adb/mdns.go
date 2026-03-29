@@ -23,6 +23,18 @@ type MdnsDevice struct {
 	Port int
 }
 
+// mdnsAddr extracts an IP:port string from a zeroconf entry,
+// preferring IPv4 but falling back to IPv6.
+func mdnsAddr(entry *zeroconf.ServiceEntry) (string, bool) {
+	if len(entry.AddrIPv4) > 0 {
+		return fmt.Sprintf("%s:%d", entry.AddrIPv4[0].String(), entry.Port), true
+	}
+	if len(entry.AddrIPv6) > 0 {
+		return fmt.Sprintf("[%s]:%d", entry.AddrIPv6[0].String(), entry.Port), true
+	}
+	return "", false
+}
+
 // DiscoverDevices browses for already-paired wireless debugging devices
 // via the _adb-tls-connect._tcp mDNS service.
 func DiscoverDevices(ctx context.Context) ([]MdnsDevice, error) {
@@ -38,10 +50,10 @@ func DiscoverDevices(ctx context.Context) ([]MdnsDevice, error) {
 	go func() {
 		defer close(done)
 		for entry := range entries {
-			if len(entry.AddrIPv4) == 0 {
+			addr, ok := mdnsAddr(entry)
+			if !ok {
 				continue
 			}
-			addr := fmt.Sprintf("%s:%d", entry.AddrIPv4[0].String(), entry.Port)
 			devices = append(devices, MdnsDevice{
 				Name: entry.Instance,
 				Addr: addr,
@@ -54,9 +66,11 @@ func DiscoverDevices(ctx context.Context) ([]MdnsDevice, error) {
 	defer cancel()
 
 	if err := resolver.Browse(scanCtx, connectService, mdnsDomain, entries); err != nil {
+		close(entries) // unblock goroutine so it doesn't leak
 		return nil, fmt.Errorf("mdns: browse: %w", err)
 	}
 
+	<-scanCtx.Done()
 	<-done
 	return devices, nil
 }
@@ -100,10 +114,10 @@ func DiscoverPairingDevices(ctx context.Context, timeout time.Duration) ([]MdnsD
 	go func() {
 		defer close(done)
 		for entry := range entries {
-			if len(entry.AddrIPv4) == 0 {
+			addr, ok := mdnsAddr(entry)
+			if !ok {
 				continue
 			}
-			addr := fmt.Sprintf("%s:%d", entry.AddrIPv4[0].String(), entry.Port)
 			devices = append(devices, MdnsDevice{
 				Name: entry.Instance,
 				Addr: addr,
@@ -116,9 +130,11 @@ func DiscoverPairingDevices(ctx context.Context, timeout time.Duration) ([]MdnsD
 	defer cancel()
 
 	if err := resolver.Browse(scanCtx, pairingService, mdnsDomain, entries); err != nil {
+		close(entries) // unblock goroutine so it doesn't leak
 		return nil, fmt.Errorf("mdns: browse pairing: %w", err)
 	}
 
+	<-scanCtx.Done()
 	<-done
 	return devices, nil
 }

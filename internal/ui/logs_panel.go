@@ -12,6 +12,12 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+const (
+	maxLogLines     = 2000
+	logWindowWidth  = 1000
+	logWindowHeight = 450
+)
+
 // LogsPanel collects log lines and can display them in a live-updating window
 // with white monospace text.
 type LogsPanel struct {
@@ -73,14 +79,12 @@ func (e *readOnlyEntry) TypedShortcut(s fyne.Shortcut) {
 	e.Entry.TypedShortcut(s)
 }
 
-// NewLogsPanel creates a new logs panel.
 func NewLogsPanel() *LogsPanel {
 	return &LogsPanel{
-		maxLines: 2000,
+		maxLines: maxLogLines,
 	}
 }
 
-// SetApp sets the app reference.
 func (lp *LogsPanel) SetApp(a *App) {
 	lp.app = a
 }
@@ -101,14 +105,12 @@ func (lp *LogsPanel) Log(text string) {
 	lp.refreshLogWindow()
 }
 
-// GetContent returns all log lines joined by newlines.
 func (lp *LogsPanel) GetContent() string {
 	lp.mu.Lock()
 	defer lp.mu.Unlock()
 	return strings.Join(lp.logLines, "\n")
 }
 
-// Clear empties all log lines.
 func (lp *LogsPanel) Clear() {
 	lp.mu.Lock()
 	lp.logLines = nil
@@ -124,7 +126,7 @@ func (lp *LogsPanel) ShowWindow() {
 	}
 
 	lp.logWin = lp.app.fyneApp.NewWindow("Logs")
-	lp.logWin.Resize(fyne.NewSize(1000, 450))
+	lp.logWin.Resize(fyne.NewSize(logWindowWidth, logWindowHeight))
 
 	lp.logContent = newReadOnlyEntry()
 	lp.logContent.TextStyle = fyne.TextStyle{Monospace: true}

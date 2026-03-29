@@ -33,11 +33,11 @@ type ScrcpyOptions struct {
 func DefaultOptions() ScrcpyOptions {
 	return ScrcpyOptions{
 		Bitrate:       8,
-		Codec:         "h264",
+		Codec:         CodecH264,
 		AudioEnabled:  false,
-		AudioSource:   "output",
+		AudioSource:   AudioSourceOutput,
 		ClipboardSync: true,
-		VideoSource:   "display",
+		VideoSource:   VideoSourceDisplay,
 	}
 }
 
@@ -53,18 +53,18 @@ func (o *ScrcpyOptions) Validate() error {
 	if o.MaxFPS < 0 || o.MaxFPS > 240 {
 		return errors.New("max FPS must be between 0 and 240")
 	}
-	validCodecs := map[string]bool{"h264": true, "h265": true, "av1": true}
+	validCodecs := map[string]bool{CodecH264: true, CodecH265: true, CodecAV1: true}
 	if !validCodecs[o.Codec] {
 		return errors.New("codec must be one of: h264, h265, av1")
 	}
-	validAudioSources := map[string]bool{"output": true, "mic": true, "playback": true}
+	validAudioSources := map[string]bool{AudioSourceOutput: true, AudioSourceMic: true, AudioSourcePlayback: true}
 	if !validAudioSources[o.AudioSource] {
 		return errors.New("audio source must be one of: output, mic, playback")
 	}
 	if o.Rotation < 0 || o.Rotation > 3 {
 		return errors.New("rotation must be between 0 and 3")
 	}
-	validVideoSources := map[string]bool{"display": true, "camera": true}
+	validVideoSources := map[string]bool{VideoSourceDisplay: true, VideoSourceCamera: true}
 	if !validVideoSources[o.VideoSource] {
 		return errors.New("video source must be one of: display, camera")
 	}
@@ -111,7 +111,7 @@ func (o *ScrcpyOptions) BuildCommand(scrcpyPath, deviceSerial string) []string {
 	if !o.AudioEnabled {
 		cmd = append(cmd, "--no-audio")
 	}
-	if o.AudioSource != "" && o.AudioSource != "output" {
+	if o.AudioSource != "" && o.AudioSource != AudioSourceOutput {
 		cmd = append(cmd, "--audio-source", o.AudioSource)
 	}
 	if o.Fullscreen {
@@ -147,8 +147,8 @@ func (o *ScrcpyOptions) BuildCommand(scrcpyPath, deviceSerial string) []string {
 	if o.HIDMouse {
 		cmd = append(cmd, "-M")
 	}
-	if o.VideoSource == "camera" {
-		cmd = append(cmd, "--video-source", "camera")
+	if o.VideoSource == VideoSourceCamera {
+		cmd = append(cmd, "--video-source", VideoSourceCamera)
 	}
 
 	return cmd
