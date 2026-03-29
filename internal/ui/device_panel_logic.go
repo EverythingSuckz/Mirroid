@@ -21,17 +21,14 @@ func (dp *DevicePanel) refreshDevices() {
 		return
 	}
 
-	// filter out explicitly ignored devices (by model, serial, or IP)
+	// filter out explicitly ignored devices (by serial or host/IP)
 	var filtered []adb.Device
 	for _, d := range liveDevices {
-		ignored := false
-		if d.Model != "" && dp.app.isIgnored(d.Model) {
-			ignored = true
-		}
 		if dp.app.isIgnored(d.Serial) {
-			ignored = true
+			_ = dp.app.adbClient.Disconnect(d.Serial)
+			continue
 		}
-		if ignored {
+		if host := parseHostFromAddr(d.Serial); host != d.Serial && dp.app.isIgnored(host) {
 			_ = dp.app.adbClient.Disconnect(d.Serial)
 			continue
 		}
@@ -45,11 +42,11 @@ func (dp *DevicePanel) refreshDevices() {
 	selectedSerial := dp.lastSelected
 	wasConnected := dp.connectedSet[selectedSerial]
 
-	// Build connected set from live ADB results
+	// build connected set from live ADB results
 	dp.connectedSet = make(map[string]bool, len(liveDevices))
 	for _, d := range liveDevices {
 		dp.connectedSet[d.Serial] = true
-		// Clear reconnect errors for devices that are now connected
+		// clear reconnect errors for devices that are now connected
 		delete(dp.reconnectErrors, d.Serial)
 	}
 
