@@ -3,7 +3,6 @@ package ui
 import (
 	"image/png"
 	"os"
-	"path/filepath"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -28,11 +27,17 @@ const (
 func (dip *DeviceInfoPanel) takeScreenshot(serial string) {
 	dip.app.logsPanel.Log("Taking screenshot...")
 
-	tmpDir := os.TempDir()
-	tmpFile := filepath.Join(tmpDir, "mirroid_screenshot.png")
+	tmp, err := os.CreateTemp("", "mirroid_screenshot-*.png")
+	if err != nil {
+		dip.app.logsPanel.Log("[ERROR]Failed to create temp file: " + err.Error())
+		return
+	}
+	tmpFile := tmp.Name()
+	tmp.Close()
 
 	if err := dip.app.adbClient.TakeScreenshot(serial, tmpFile); err != nil {
 		dip.app.logsPanel.Log("[ERROR]Screenshot failed: " + err.Error())
+		os.Remove(tmpFile)
 		return
 	}
 
@@ -41,6 +46,7 @@ func (dip *DeviceInfoPanel) takeScreenshot(serial string) {
 	f, err := os.Open(tmpFile)
 	if err != nil {
 		dip.app.logsPanel.Log("[ERROR]Failed to open screenshot: " + err.Error())
+		os.Remove(tmpFile)
 		return
 	}
 	defer f.Close()
@@ -48,12 +54,16 @@ func (dip *DeviceInfoPanel) takeScreenshot(serial string) {
 	img, err := png.Decode(f)
 	if err != nil {
 		dip.app.logsPanel.Log("[ERROR]Failed to decode screenshot: " + err.Error())
+		os.Remove(tmpFile)
 		return
 	}
 
 	fyne.Do(func() {
 		screenshotWin := dip.app.fyneApp.NewWindow("Screenshot")
 		screenshotWin.Resize(fyne.NewSize(screenshotWindowWidth, screenshotWindowHeight))
+		screenshotWin.SetOnClosed(func() {
+			os.Remove(tmpFile)
+		})
 
 		imgWidget := canvas.NewImageFromImage(img)
 		imgWidget.FillMode = canvas.ImageFillContain
