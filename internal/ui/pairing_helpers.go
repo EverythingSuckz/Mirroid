@@ -26,10 +26,7 @@ func doPostPairConnect(a *App, device *adb.MdnsDevice, win fyne.Window) {
 	var dialogShown sync.Once
 
 	for attempt := 1; attempt <= 30; attempt++ {
-		ip := device.Addr
-		if idx := strings.Index(ip, ":"); idx > 0 {
-			ip = ip[:idx]
-		}
+		ip := parseHostFromAddr(device.Addr)
 		existingDevices, _ := a.adbClient.GetDevices()
 		for _, d := range existingDevices {
 			if strings.Contains(d.Serial, ip) {
