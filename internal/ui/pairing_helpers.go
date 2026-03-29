@@ -90,7 +90,10 @@ func showToggleDebuggingDialog(win fyne.Window) {
 func randomDigits(n int) string {
 	result := make([]byte, n)
 	for i := range result {
-		val, _ := rand.Int(rand.Reader, big.NewInt(10))
+		val, err := rand.Int(rand.Reader, big.NewInt(10))
+		if err != nil {
+			panic("crypto/rand failed: " + err.Error())
+		}
 		result[i] = byte('0' + val.Int64())
 	}
 	return string(result)
