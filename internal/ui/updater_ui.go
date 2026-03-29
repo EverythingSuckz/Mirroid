@@ -27,7 +27,10 @@ func getToolVersion(configPath, fallback, flag string) string {
 		bin = fallback
 	}
 
-	cmd := exec.Command(bin, flag)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, bin, flag)
 	platform.HideConsole(cmd)
 	out, err := cmd.Output()
 	if err != nil {

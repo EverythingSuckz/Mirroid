@@ -2,13 +2,20 @@ package adb
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"os/exec"
 	"strings"
+	"time"
 
 	"mirroid/internal/model"
 	"mirroid/internal/platform"
+)
+
+const (
+	adbTimeout     = 10 * time.Second // quick queries (devices, connect, disconnect, getprop)
+	adbLongTimeout = 30 * time.Second // slow operations (pair, screenshot, device info)
 )
 
 // Device represents a connected Android device.
@@ -54,7 +61,9 @@ func (c *Client) Path() string {
 
 // GetDevices runs `adb devices -l` and parses the output.
 func (c *Client) GetDevices() ([]Device, error) {
-	cmd := exec.Command(c.adbPath, "devices", "-l")
+	ctx, cancel := context.WithTimeout(context.Background(), adbTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.adbPath, "devices", "-l")
 	platform.HideConsole(cmd)
 	out, err := cmd.Output()
 	if err != nil {
@@ -130,7 +139,9 @@ func (c *Client) GetDevices() ([]Device, error) {
 
 // Pair runs `adb pair <addr> <password>`.
 func (c *Client) Pair(addr, password string) error {
-	cmd := exec.Command(c.adbPath, "pair", addr, password)
+	ctx, cancel := context.WithTimeout(context.Background(), adbLongTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.adbPath, "pair", addr, password)
 	platform.HideConsole(cmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -145,7 +156,9 @@ func (c *Client) Pair(addr, password string) error {
 
 // Connect runs `adb connect <addr>`.
 func (c *Client) Connect(addr string) error {
-	cmd := exec.Command(c.adbPath, "connect", addr)
+	ctx, cancel := context.WithTimeout(context.Background(), adbTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.adbPath, "connect", addr)
 	platform.HideConsole(cmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -160,7 +173,9 @@ func (c *Client) Connect(addr string) error {
 
 // Disconnect runs `adb disconnect <addr>`.
 func (c *Client) Disconnect(addr string) error {
-	cmd := exec.Command(c.adbPath, "disconnect", addr)
+	ctx, cancel := context.WithTimeout(context.Background(), adbTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.adbPath, "disconnect", addr)
 	platform.HideConsole(cmd)
 	_, err := cmd.CombinedOutput()
 	if err != nil {
@@ -171,7 +186,9 @@ func (c *Client) Disconnect(addr string) error {
 
 // VerifyConnection checks if a device is actually reachable by running a shell command.
 func (c *Client) VerifyConnection(serial string) bool {
-	cmd := exec.Command(c.adbPath, "-s", serial, "shell", "echo", "ok")
+	ctx, cancel := context.WithTimeout(context.Background(), adbTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.adbPath, "-s", serial, "shell", "echo", "ok")
 	platform.HideConsole(cmd)
 	out, err := cmd.Output()
 	if err != nil {
