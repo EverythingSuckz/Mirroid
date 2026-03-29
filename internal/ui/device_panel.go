@@ -235,6 +235,11 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 
 	dp.disconnectBtn = ttwidget.NewButtonWithIcon("", theme.LogoutIcon(), func() {
 		go func() {
+			// track models of disconnected devices for the alias sweep.
+			// stored locally (not in ignoredAddrs) to avoid permanently
+			// blocking unrelated devices that share the same model name.
+			disconnectedModels := make(map[string]bool)
+
 			for _, s := range dp.SelectedDevices() {
 				dp.app.runner.StopFor(s)
 
@@ -255,22 +260,23 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 					dp.app.logsPanel.Log("[OK]Disconnected " + s)
 				}
 
-				// Block reconnection via serial, IP, and model
+				// Block reconnection via serial and host/IP
 				dp.app.ignoredAddrs.Store(s, true)
 				if host := parseHostFromAddr(s); host != s {
 					dp.app.ignoredAddrs.Store(host, true)
 				}
 				if model != "" {
-					dp.app.ignoredAddrs.Store(model, true)
-					dp.app.ignoredAddrs.Store(strings.ReplaceAll(model, " ", "_"), true)
+					disconnectedModels[model] = true
+					disconnectedModels[strings.ReplaceAll(model, " ", "_")] = true
 				}
 			}
 
-			// Sweep remaining ADB entries to catch mDNS aliases
+			// Sweep remaining ADB entries to catch mDNS aliases.
+			// Only disconnect — don't persist to ignoredAddrs so that
+			// different physical devices with the same model can reconnect.
 			remaining, _ := dp.app.adbClient.GetDevices()
 			for _, d := range remaining {
-				if d.Model != "" && dp.app.isIgnored(d.Model) {
-					dp.app.ignoredAddrs.Store(d.Serial, true)
+				if d.Model != "" && disconnectedModels[d.Model] {
 					_ = dp.app.adbClient.Disconnect(d.Serial)
 				}
 			}

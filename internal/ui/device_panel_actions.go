@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"net"
-	"strings"
 
 	"mirroid/internal/adb"
 )
@@ -29,24 +28,12 @@ func (dp *DevicePanel) ReconnectDevice(serial string) {
 	}
 	dp.reconnectingSet[serial] = true
 	delete(dp.reconnectErrors, serial)
-	// Look up model before releasing the lock
-	devModel := ""
-	for _, d := range dp.devices {
-		if d.Serial == serial {
-			devModel = d.Model
-			break
-		}
-	}
 	dp.mu.Unlock()
 
 	// Clear ignoredAddrs so refreshDevices won't filter the device back out
 	dp.app.ignoredAddrs.Delete(serial)
 	if host := parseHostFromAddr(serial); host != serial {
 		dp.app.ignoredAddrs.Delete(host)
-	}
-	if devModel != "" {
-		dp.app.ignoredAddrs.Delete(devModel)
-		dp.app.ignoredAddrs.Delete(strings.ReplaceAll(devModel, " ", "_"))
 	}
 
 	dp.updateList()
