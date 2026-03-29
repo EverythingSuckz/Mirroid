@@ -257,8 +257,8 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 
 				// Block reconnection via serial, IP, and model
 				dp.app.ignoredAddrs.Store(s, true)
-				if idx := strings.Index(s, ":"); idx > 0 {
-					dp.app.ignoredAddrs.Store(s[:idx], true)
+				if host := parseHostFromAddr(s); host != s {
+					dp.app.ignoredAddrs.Store(host, true)
 				}
 				if model != "" {
 					dp.app.ignoredAddrs.Store(model, true)
