@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -148,9 +149,13 @@ func (u *Updater) FetchChangelog(tagName string) string {
 
 // Download fetches the asset at the given URL to a temporary file in destDir.
 // destDir should be on the same filesystem as the target for atomic rename.
-// progress is called periodically with bytes received and total size.
-func (u *Updater) Download(assetURL, destDir string, progress ProgressFunc) (string, error) {
-	resp, err := u.dlClient.Get(assetURL)
+// ctx controls cancellation; progress is called periodically with bytes received and total size.
+func (u *Updater) Download(ctx context.Context, assetURL, destDir string, progress ProgressFunc) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("updater: download failed: %w", err)
+	}
+	resp, err := u.dlClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("updater: download failed: %w", err)
 	}
@@ -176,6 +181,11 @@ func (u *Updater) Download(assetURL, destDir string, progress ProgressFunc) (str
 	var received int64
 	buf := make([]byte, 32*1024)
 	for {
+		if ctx.Err() != nil {
+			tmpFile.Close()
+			os.Remove(tmpPath)
+			return "", fmt.Errorf("updater: download cancelled: %w", ctx.Err())
+		}
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
 			if _, writeErr := tmpFile.Write(buf[:n]); writeErr != nil {

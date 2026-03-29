@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -247,7 +248,7 @@ func (a *App) performUpdate(u *updater.Updater, result *updater.UpdateResult) {
 
 		// download with throttled progress updates (at most every 150ms)
 		var lastProgressUpdate time.Time
-		tmpPath, err := u.Download(asset.BrowserDownloadURL, destDir, func(received, total int64) {
+		tmpPath, err := u.Download(context.Background(), asset.BrowserDownloadURL, destDir, func(received, total int64) {
 			if total <= 0 {
 				return
 			}
