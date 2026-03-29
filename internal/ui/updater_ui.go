@@ -161,7 +161,11 @@ func (a *App) showUpdateDialog(u *updater.Updater, result *updater.UpdateResult,
 	if installType == updater.InstallSystem {
 		// .deb users: open browser to release page
 		actionBtn = widget.NewButton("View on GitHub", func() {
-			ghURL, _ := url.Parse(result.Release.HTMLURL)
+			ghURL, err := url.Parse(result.Release.HTMLURL)
+			if err != nil {
+				dialog.ShowError(fmt.Errorf("Invalid release URL: %s", err), a.window)
+				return
+			}
 			_ = a.fyneApp.OpenURL(ghURL)
 			dlg.Hide()
 		})
