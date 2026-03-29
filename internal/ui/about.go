@@ -5,7 +5,10 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -15,14 +18,16 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"mirroid/internal/platform"
 	"mirroid/internal/updater"
 )
 
-// showAboutDialog shows a modal About dialog with app info.
+// showAboutDialog shows a modal popup with app info.
 func (a *App) showAboutDialog() {
-	icon := canvas.NewImageFromResource(theme.ComputerIcon())
+	appIcon := a.fyneApp.Icon()
+	icon := canvas.NewImageFromResource(appIcon)
 	icon.FillMode = canvas.ImageFillContain
-	icon.SetMinSize(fyne.NewSize(64, 64))
+	icon.SetMinSize(fyne.NewSize(72, 72))
 
 	version := a.fyneApp.Metadata().Version
 	if version == "" {
@@ -30,7 +35,7 @@ func (a *App) showAboutDialog() {
 	}
 
 	title := canvas.NewText("Mirroid", theme.Color(theme.ColorNameForeground))
-	title.TextSize = 22
+	title.TextSize = 24
 	title.TextStyle = fyne.TextStyle{Bold: true}
 	title.Alignment = fyne.TextAlignCenter
 
@@ -44,21 +49,99 @@ func (a *App) showAboutDialog() {
 		fyne.TextAlignCenter, fyne.TextStyle{},
 	)
 
-	ghURL, _ := url.Parse("https://github.com/EverythingSuckz/Mirroid")
-	githubLink := widget.NewHyperlink("GitHub", ghURL)
+	// Clickable dependency versions linking to their release pages
+	adbVer := getToolVersion(a.cfg.AppConf.ADBPath, "adb", "version")
+	scrcpyVer := getToolVersion(a.cfg.AppConf.ScrcpyPath, "scrcpy", "--version")
 
-	content := container.NewVBox(
-		container.NewCenter(icon),
-		container.NewCenter(title),
-		container.NewCenter(versionLabel),
-		container.NewCenter(description),
-		widget.NewSeparator(),
-		container.NewCenter(githubLink),
+	adbReleasesURL, _ := url.Parse("https://developer.android.com/tools/releases/platform-tools")
+	scrcpyReleasesURL, _ := url.Parse("https://github.com/Genymobile/scrcpy/releases")
+
+	// Single RichText widget avoids the per-widget internal padding that
+	// Label/Hyperlink add, giving tight line spacing between rows.
+	inlineBold := widget.RichTextStyle{Inline: true, TextStyle: fyne.TextStyle{Bold: true}}
+	inlinePlain := widget.RichTextStyle{Inline: true}
+	infoText := widget.NewRichText(
+		&widget.TextSegment{Text: "ADB:   ", Style: inlineBold},
+		&widget.HyperlinkSegment{Text: adbVer, URL: adbReleasesURL},
+		&widget.TextSegment{Text: "\nscrcpy:   ", Style: inlineBold},
+		&widget.HyperlinkSegment{Text: scrcpyVer, URL: scrcpyReleasesURL},
+		&widget.TextSegment{Text: "\nOS:   ", Style: inlineBold},
+		&widget.TextSegment{Text: fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH), Style: inlinePlain},
 	)
 
-	dlg := dialog.NewCustom("About Mirroid", "Close", content, a.window)
-	dlg.Resize(fyne.NewSize(350, 320))
-	dlg.Show()
+	// GitHub button opens the repo
+	ghURL, _ := url.Parse("https://github.com/EverythingSuckz/Mirroid")
+	ghBtn := widget.NewButton("GitHub", func() {
+		_ = a.fyneApp.OpenURL(ghURL)
+	})
+
+	var popup *widget.PopUp
+
+	// Header row: title left, close X right.
+	headerLabel := widget.NewLabelWithStyle("About Mirroid", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	closeBtn := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
+		popup.Hide()
+	})
+	header := container.NewBorder(nil, nil, nil, closeBtn, headerLabel)
+
+	// Small spacer between header and separator for breathing room.
+	headerSpacer := canvas.NewRectangle(nil)
+	headerSpacer.SetMinSize(fyne.NewSize(0, theme.Padding()))
+
+	body := container.NewVBox(
+		header,
+		headerSpacer,
+		widget.NewSeparator(),
+		container.NewCenter(icon),
+		title,
+		versionLabel,
+		description,
+		widget.NewSeparator(),
+		container.NewCenter(infoText),
+		widget.NewSeparator(),
+		container.NewCenter(ghBtn),
+	)
+
+	popup = widget.NewModalPopUp(container.NewPadded(body), a.window.Canvas())
+	popup.Resize(fyne.NewSize(350, popup.MinSize().Height))
+	popup.Show()
+}
+
+// getToolVersion runs a CLI tool with a version flag and returns a cleaned-up version string.
+func getToolVersion(configPath, fallback, flag string) string {
+	bin := configPath
+	if bin == "" {
+		bin = fallback
+	}
+
+	cmd := exec.Command(bin, flag)
+	platform.HideConsole(cmd)
+	out, err := cmd.Output()
+	if err != nil {
+		return "not found"
+	}
+
+	raw := strings.TrimSpace(string(out))
+
+	// Take only the first line of output.
+	if first, _, ok := strings.Cut(raw, "\n"); ok {
+		raw = first
+	}
+
+	// adb: "Android Debug Bridge version 1.0.41" → "1.0.41"
+	if strings.HasPrefix(raw, "Android Debug Bridge version") {
+		raw = strings.TrimPrefix(raw, "Android Debug Bridge version ")
+	}
+
+	// scrcpy: "scrcpy 3.3.4 <https://github.com/Genymobile/scrcpy>" → "3.3.4"
+	if strings.HasPrefix(raw, "scrcpy ") {
+		raw = strings.TrimPrefix(raw, "scrcpy ")
+		if idx := strings.IndexByte(raw, ' '); idx != -1 {
+			raw = raw[:idx]
+		}
+	}
+
+	return strings.TrimSpace(raw)
 }
 
 // checkForUpdates checks for available updates.
