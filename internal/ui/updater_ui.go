@@ -229,9 +229,7 @@ func (a *App) performUpdate(u *updater.Updater, result *updater.UpdateResult) {
 		}
 		exe, _ = filepath.EvalSymlinks(exe)
 
-		// for AppImage, os.Executable() returns the mounted runtime path
-		// inside a read-only FUSE mount. Use $APPIMAGE to get the real
-		// AppImage file path for download, apply, and restart.
+		// for AppImage, use $APPIMAGE instead of the mounted FUSE binary
 		if installType == updater.InstallAppImage {
 			if appImage := os.Getenv("APPIMAGE"); appImage != "" {
 				exe = appImage

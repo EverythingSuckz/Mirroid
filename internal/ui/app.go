@@ -67,6 +67,33 @@ func (a *App) isIgnored(key string) bool {
 	return ok
 }
 
+// ignoreDevice stores the device's serial, host, and hardware ID in ignoredAddrs.
+func (a *App) ignoreDevice(serial, devID string) {
+	a.ignoredAddrs.Store(serial, true)
+	if host := parseHostFromAddr(serial); host != serial {
+		a.ignoredAddrs.Store(host, true)
+	}
+	if devID != "" && devID != "-" {
+		a.ignoredAddrs.Store("devid:"+devID, true)
+	}
+}
+
+// disconnectAliases disconnects remaining ADB entries that share a hardware
+// device ID with the given set, and stores their serials in ignoredAddrs.
+func (a *App) disconnectAliases(devIDs map[string]bool) {
+	if len(devIDs) == 0 {
+		return
+	}
+	remaining, _ := a.adbClient.GetDevices()
+	for _, d := range remaining {
+		rid := a.adbClient.GetDeviceID(d.Serial)
+		if rid != "" && devIDs[rid] {
+			a.ignoredAddrs.Store(d.Serial, true)
+			_ = a.adbClient.Disconnect(d.Serial)
+		}
+	}
+}
+
 func NewApp(debug bool) *App {
 	fyneApp := app.NewWithID("com.mirroid.app")
 	fyneApp.Settings().SetTheme(theme.DarkTheme())

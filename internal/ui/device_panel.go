@@ -234,8 +234,6 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 
 	dp.disconnectBtn = ttwidget.NewButtonWithIcon("", theme.LogoutIcon(), func() {
 		go func() {
-			// collect hardware device IDs before disconnecting so the
-			// sweep can precisely match aliases of the same physical device.
 			disconnectedDevIDs := make(map[string]bool)
 
 			for _, s := range dp.SelectedDevices() {
@@ -250,29 +248,13 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 					dp.app.logsPanel.Log("[OK]Disconnected " + s)
 				}
 
-				// block reconnection via serial, host/IP, and device ID
-				dp.app.ignoredAddrs.Store(s, true)
-				if host := parseHostFromAddr(s); host != s {
-					dp.app.ignoredAddrs.Store(host, true)
-				}
+				dp.app.ignoreDevice(s, devID)
 				if devID != "" {
-					dp.app.ignoredAddrs.Store("devid:"+devID, true)
 					disconnectedDevIDs[devID] = true
 				}
 			}
 
-			// Sweep remaining ADB entries to disconnect mDNS aliases.
-			// Match by hardware device ID for precision — avoids
-			// disconnecting unrelated devices that share the same model.
-			remaining, _ := dp.app.adbClient.GetDevices()
-			for _, d := range remaining {
-				rid := dp.app.adbClient.GetDeviceID(d.Serial)
-				if rid != "" && disconnectedDevIDs[rid] {
-					dp.app.ignoredAddrs.Store(d.Serial, true)
-					_ = dp.app.adbClient.Disconnect(d.Serial)
-				}
-			}
-
+			dp.app.disconnectAliases(disconnectedDevIDs)
 			dp.refreshDevices()
 		}()
 	})
