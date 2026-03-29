@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -114,7 +113,6 @@ func (dip *DeviceInfoPanel) RefreshActions() {
 	})
 }
 
-
 func (dip *DeviceInfoPanel) buildInfoView(serial string, info adb.DeviceInfo) fyne.CanvasObject {
 	titleText := fmt.Sprintf("%s %s", info.Manufacturer, info.Model)
 	title := widget.NewLabelWithStyle(titleText, fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
@@ -169,19 +167,23 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info adb.DeviceInfo) fy
 				dip.app.logsPanel.Log("[ERROR]Disconnect: " + err.Error())
 			} else {
 				dip.app.logsPanel.Log("[OK]Disconnected " + serial)
-				// block this device from reconnecting via serial and host/IP.
-				// model is NOT stored in ignoredAddrs to avoid permanently
-				// blocking unrelated devices that share the same model name.
+				// block this device from reconnecting via serial, host/IP,
+				// and hardware device ID (ro.serialno).
 				dip.app.ignoredAddrs.Store(serial, true)
 				ip := parseHostFromAddr(serial)
 				dip.app.ignoredAddrs.Store(ip, true)
+				if info.DeviceID != "" && info.DeviceID != "-" {
+					dip.app.ignoredAddrs.Store("devid:"+info.DeviceID, true)
+				}
 
 				// sweep remaining ADB entries to disconnect mDNS aliases.
-				// only disconnect -- don't persist to ignoredAddrs so that
-				// different physical devices with the same model can reconnect.
+				// match by hardware device ID for precision and avoids
+				// disconnecting unrelated devices that share the same model.
 				remaining, _ := dip.app.adbClient.GetDevices()
 				for _, d := range remaining {
-					if d.Model != "" && (d.Model == info.Model || d.Model == strings.ReplaceAll(info.Model, " ", "_")) {
+					rid := dip.app.adbClient.GetDeviceID(d.Serial)
+					if rid != "" && info.DeviceID != "" && info.DeviceID != "-" && rid == info.DeviceID {
+						dip.app.ignoredAddrs.Store(d.Serial, true)
 						_ = dip.app.adbClient.Disconnect(d.Serial)
 					}
 				}
@@ -279,4 +281,3 @@ func (dip *DeviceInfoPanel) buildDisconnectedView(serial string) fyne.CanvasObje
 		actions,
 	)
 }
-

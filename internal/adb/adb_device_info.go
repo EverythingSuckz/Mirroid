@@ -15,6 +15,7 @@ type DeviceInfo struct {
 	SDK            string
 	BuildID        string
 	Serial         string
+	DeviceID       string
 	Resolution     string
 	Density        string
 	Battery        string
@@ -62,8 +63,21 @@ func (c *Client) GetDeviceInfo(serial string) DeviceInfo {
 		SDK:            getProp("ro.build.version.sdk"),
 		BuildID:        getProp("ro.build.display.id"),
 		Serial:         serial,
+		DeviceID:       getProp("ro.serialno"),
 		Resolution:     resolution,
 		Density:        getProp("ro.sf.lcd_density"),
 		Battery:        battery,
 	}
+}
+
+// GetDeviceID returns the hardware serial (ro.serialno) for a connected device.
+// Returns empty string on failure.
+func (c *Client) GetDeviceID(serial string) string {
+	cmd := exec.Command(c.adbPath, "-s", serial, "shell", "getprop", "ro.serialno")
+	platform.HideConsole(cmd)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
