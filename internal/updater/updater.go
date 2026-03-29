@@ -125,6 +125,25 @@ func (u *Updater) CheckForUpdate() (*UpdateResult, error) {
 	}, nil
 }
 
+// FetchChangelog downloads the changelog.txt asset from the given release tag.
+// Returns the content as a string, or empty string on any failure.
+func (u *Updater) FetchChangelog(tagName string) string {
+	url := fmt.Sprintf("https://github.com/%s/%s/releases/download/%s/changelog.txt", u.owner, u.repo, tagName)
+	resp, err := u.client.Get(url)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(body))
+}
+
 // Download fetches the asset at the given URL to a temporary file in destDir.
 // destDir should be on the same filesystem as the target for atomic rename.
 // progress is called periodically with bytes received and total size.

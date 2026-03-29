@@ -88,6 +88,11 @@ func (a *App) checkForUpdates(silent bool) {
 				a.cfg.AppConf.LastUpdateCheck = time.Now().Unix()
 				_ = a.cfg.SaveAppConfig()
 			}
+			// Fetch clean changelog (no download table, no hashes)
+			var changelog string
+			if err == nil && result.Available {
+				changelog = u.FetchChangelog(result.Release.TagName)
+			}
 			fyne.Do(func() {
 				checking.Hide()
 				if err != nil {
@@ -96,7 +101,7 @@ func (a *App) checkForUpdates(silent bool) {
 					return
 				}
 				if result.Available {
-					a.showUpdateDialog(u, result)
+					a.showUpdateDialog(u, result, changelog)
 				} else {
 					dialog.ShowInformation("Up to Date",
 						fmt.Sprintf("You're running the latest version (v%s).", result.CurrentVersion),
@@ -118,24 +123,30 @@ func (a *App) checkForUpdates(silent bool) {
 		a.cfg.AppConf.LastUpdateCheck = time.Now().Unix()
 		_ = a.cfg.SaveAppConfig()
 		if result.Available {
+			changelog := u.FetchChangelog(result.Release.TagName)
 			fyne.Do(func() {
-				a.showUpdateDialog(u, result)
+				a.showUpdateDialog(u, result, changelog)
 			})
 		}
 	}()
 }
 
 // showUpdateDialog shows the update-available dialog with changelog and install button.
-func (a *App) showUpdateDialog(u *updater.Updater, result *updater.UpdateResult) {
+func (a *App) showUpdateDialog(u *updater.Updater, result *updater.UpdateResult, changelog string) {
 	versionLabel := widget.NewLabelWithStyle(
 		fmt.Sprintf("v%s  →  v%s", result.CurrentVersion, result.LatestVersion),
 		fyne.TextAlignCenter, fyne.TextStyle{Bold: true},
 	)
 
-	// Changelog
+	// Prefer clean changelog from changelog.txt; fall back to release body
+	body := changelog
+	if body == "" {
+		body = result.Release.Body
+	}
+
 	var changelogWidget fyne.CanvasObject
-	if result.Release.Body != "" {
-		rt := widget.NewRichTextFromMarkdown(result.Release.Body)
+	if body != "" {
+		rt := widget.NewRichTextFromMarkdown(body)
 		rt.Wrapping = fyne.TextWrapWord
 		changelogWidget = container.NewVScroll(rt)
 		changelogWidget.(*container.Scroll).SetMinSize(fyne.NewSize(450, 200))

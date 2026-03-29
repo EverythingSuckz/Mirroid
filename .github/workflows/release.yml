@@ -254,6 +254,9 @@ jobs:
           FEATURES=""
           FIXES=""
           CHORES=""
+          CL_FEATURES=""
+          CL_FIXES=""
+          CL_CHORES=""
 
           while IFS= read -r line; do
             hash=$(echo "$line" | cut -d' ' -f1)
@@ -264,16 +267,19 @@ jobs:
                 clean=$(echo "$msg" | sed 's/^feat[^:]*: *//')
                 clean="$(echo "${clean:0:1}" | tr '[:lower:]' '[:upper:]')${clean:1}"
                 FEATURES="${FEATURES}- \`${hash}\` ${clean}\n"
+                CL_FEATURES="${CL_FEATURES}- ${clean}\n"
                 ;;
               fix:*|fix\(*)
                 clean=$(echo "$msg" | sed 's/^fix[^:]*: *//')
                 clean="$(echo "${clean:0:1}" | tr '[:lower:]' '[:upper:]')${clean:1}"
                 FIXES="${FIXES}- \`${hash}\` ${clean}\n"
+                CL_FIXES="${CL_FIXES}- ${clean}\n"
                 ;;
               *)
                 clean=$(echo "$msg" | sed 's/^[a-z]*[^:]*: *//')
                 clean="$(echo "${clean:0:1}" | tr '[:lower:]' '[:upper:]')${clean:1}"
                 CHORES="${CHORES}- \`${hash}\` ${clean}\n"
+                CL_CHORES="${CL_CHORES}- ${clean}\n"
                 ;;
             esac
           done < <(git log "$RANGE" --pretty=format:"%h %s" --reverse)
@@ -315,6 +321,23 @@ jobs:
             BODY="${BODY}### Chores\n${CHORES}\n"
           fi
 
+          # Write clean changelog for in-app updater (no hashes, no download table)
+          CHANGELOG=""
+          if [ -n "$CL_FEATURES" ]; then
+            CHANGELOG="${CHANGELOG}### Features\n${CL_FEATURES}\n"
+          fi
+          if [ -n "$CL_FIXES" ]; then
+            CHANGELOG="${CHANGELOG}### Bug Fixes\n${CL_FIXES}\n"
+          fi
+          if [ -n "$CL_CHORES" ]; then
+            CHANGELOG="${CHANGELOG}### Other Changes\n${CL_CHORES}\n"
+          fi
+          if [ -n "$CHANGELOG" ]; then
+            echo -e "$CHANGELOG" > changelog.txt
+          else
+            echo "No changes recorded." > changelog.txt
+          fi
+
           {
             echo "body<<EOF"
             echo -e "$BODY"
@@ -326,6 +349,9 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: Add changelog to artifacts
+        run: cp changelog.txt artifacts/
 
       - name: Import GPG key
         uses: crazy-max/ghaction-import-gpg@v7
