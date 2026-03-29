@@ -206,19 +206,26 @@ func (a *App) performUpdate(u *updater.Updater, result *updater.UpdateResult) {
 		return
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	progressBar := widget.NewProgressBar()
 	statusLabel := widget.NewLabel("Downloading update...")
+	cancelBtn := widget.NewButton("Cancel", func() {
+		cancel()
+	})
 
 	progressContent := container.NewVBox(
 		statusLabel,
 		progressBar,
+		container.NewCenter(cancelBtn),
 	)
 
 	progressDlg := dialog.NewCustomWithoutButtons("Updating Mirroid", progressContent, a.window)
-	progressDlg.Resize(fyne.NewSize(400, 130))
+	progressDlg.Resize(fyne.NewSize(400, 150))
 	progressDlg.Show()
 
 	go func() {
+		defer cancel()
 		exe, err := os.Executable()
 		if err != nil {
 			fyne.Do(func() {
@@ -246,7 +253,7 @@ func (a *App) performUpdate(u *updater.Updater, result *updater.UpdateResult) {
 
 		// download with throttled progress updates (at most every 150ms)
 		var lastProgressUpdate time.Time
-		tmpPath, err := u.Download(context.Background(), asset.BrowserDownloadURL, destDir, func(received, total int64) {
+		tmpPath, err := u.Download(ctx, asset.BrowserDownloadURL, destDir, func(received, total int64) {
 			if total <= 0 {
 				return
 			}
@@ -264,7 +271,9 @@ func (a *App) performUpdate(u *updater.Updater, result *updater.UpdateResult) {
 		if err != nil {
 			fyne.Do(func() {
 				progressDlg.Hide()
-				dialog.ShowError(fmt.Errorf("Download failed: %s", err), a.window)
+				if ctx.Err() == nil {
+					dialog.ShowError(fmt.Errorf("Download failed: %s", err), a.window)
+				}
 			})
 			return
 		}
@@ -272,6 +281,7 @@ func (a *App) performUpdate(u *updater.Updater, result *updater.UpdateResult) {
 		fyne.Do(func() {
 			statusLabel.SetText("Applying update...")
 			progressBar.SetValue(1.0)
+			cancelBtn.Hide()
 		})
 
 		if err := updater.Apply(tmpPath, exe, installType); err != nil {
