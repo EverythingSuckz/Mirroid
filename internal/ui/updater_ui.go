@@ -78,12 +78,12 @@ func (a *App) checkForUpdates(silent bool) {
 
 		go func() {
 			result, err := u.CheckForUpdate()
-			// Save timestamp only on successful check
+			// save timestamp only on successful check
 			if err == nil {
 				a.cfg.AppConf.LastUpdateCheck = time.Now().Unix()
 				_ = a.cfg.SaveAppConfig()
 			}
-			// Fetch clean changelog (no download table, no hashes)
+			// fetch clean changelog (no download table, no hashes)
 			var changelog string
 			if err == nil && result.Available {
 				changelog = u.FetchChangelog(result.Release.TagName)
@@ -107,14 +107,14 @@ func (a *App) checkForUpdates(silent bool) {
 		return
 	}
 
-	// Silent mode: no UI unless update is available
+	// silent mode: no UI unless update is available
 	go func() {
 		result, err := u.CheckForUpdate()
 		if err != nil {
 			slog.Debug("silent update check failed", "error", err)
 			return
 		}
-		// Save timestamp only on successful check
+		// save timestamp only on successful check
 		a.cfg.AppConf.LastUpdateCheck = time.Now().Unix()
 		_ = a.cfg.SaveAppConfig()
 		if result.Available {
@@ -133,7 +133,7 @@ func (a *App) showUpdateDialog(u *updater.Updater, result *updater.UpdateResult,
 		fyne.TextAlignCenter, fyne.TextStyle{Bold: true},
 	)
 
-	// Prefer clean changelog from changelog.txt; fall back to release body
+	// prefer clean changelog from changelog.txt; fall back to release body
 	body := changelog
 	if body == "" {
 		body = result.Release.Body
@@ -192,7 +192,6 @@ func (a *App) showUpdateDialog(u *updater.Updater, result *updater.UpdateResult,
 func (a *App) performUpdate(u *updater.Updater, result *updater.UpdateResult) {
 	installType := updater.DetectInstallType()
 
-	// Find the right asset
 	assetName := updater.AssetName(installType)
 	var asset *updater.Asset
 	if assetName != "" {
@@ -206,7 +205,6 @@ func (a *App) performUpdate(u *updater.Updater, result *updater.UpdateResult) {
 		return
 	}
 
-	// Progress UI
 	progressBar := widget.NewProgressBar()
 	statusLabel := widget.NewLabel("Downloading update...")
 
@@ -230,15 +228,24 @@ func (a *App) performUpdate(u *updater.Updater, result *updater.UpdateResult) {
 		}
 		exe, _ = filepath.EvalSymlinks(exe)
 
-		// Choose download directory:
+		// for AppImage, os.Executable() returns the mounted runtime path
+		// inside a read-only FUSE mount. Use $APPIMAGE to get the real
+		// AppImage file path for download, apply, and restart.
+		if installType == updater.InstallAppImage {
+			if appImage := os.Getenv("APPIMAGE"); appImage != "" {
+				exe = appImage
+			}
+		}
+
+		// choose download directory:
 		// - Installer installs (Program Files) → OS temp dir (no write access to install dir)
-		// - Portable → exe directory (same filesystem for atomic rename)
+		// - Portable / AppImage → exe directory (same filesystem for atomic rename)
 		destDir := filepath.Dir(exe)
 		if installType == updater.InstallInstaller {
 			destDir = os.TempDir()
 		}
 
-		// Download with throttled progress updates (at most every 150ms)
+		// download with throttled progress updates (at most every 150ms)
 		var lastProgressUpdate time.Time
 		tmpPath, err := u.Download(asset.BrowserDownloadURL, destDir, func(received, total int64) {
 			if total <= 0 {
@@ -268,7 +275,6 @@ func (a *App) performUpdate(u *updater.Updater, result *updater.UpdateResult) {
 			progressBar.SetValue(1.0)
 		})
 
-		// Apply
 		if err := updater.Apply(tmpPath, exe, installType); err != nil {
 			os.Remove(tmpPath)
 			fyne.Do(func() {
@@ -282,7 +288,7 @@ func (a *App) performUpdate(u *updater.Updater, result *updater.UpdateResult) {
 			statusLabel.SetText("Restarting...")
 		})
 
-		// For installer type, the update script was launched; exit so the installer can replace files
+		// for installer type, the update script was launched; exit so the installer can replace files
 		if installType == updater.InstallInstaller {
 			os.Exit(0)
 		}
