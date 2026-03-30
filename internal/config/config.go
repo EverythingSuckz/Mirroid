@@ -13,6 +13,15 @@ import (
 
 const appDirName = "Mirroid"
 
+// ThemeMode selects the app theme variant.
+type ThemeMode string
+
+const (
+	ThemeModeSystem ThemeMode = "system"
+	ThemeModeDark   ThemeMode = "dark"
+	ThemeModeLight  ThemeMode = "light"
+)
+
 type Config struct {
 	dir     string
 	AppConf AppConfig
@@ -20,10 +29,11 @@ type Config struct {
 
 // AppConfig holds top-level app settings.
 type AppConfig struct {
-	ScrcpyPath       string `json:"scrcpy_path"`
-	ADBPath          string `json:"adb_path"`
-	AutoCheckUpdates bool   `json:"auto_check_updates"`
-	LastUpdateCheck  int64  `json:"last_update_check"`
+	ScrcpyPath       string    `json:"scrcpy_path"`
+	ADBPath          string    `json:"adb_path"`
+	AutoCheckUpdates bool      `json:"auto_check_updates"`
+	LastUpdateCheck  int64     `json:"last_update_check"`
+	ThemeMode        ThemeMode `json:"theme_mode"`
 }
 
 // New creates a Config, ensuring the config directory exists.

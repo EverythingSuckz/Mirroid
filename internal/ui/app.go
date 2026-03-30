@@ -60,6 +60,12 @@ type App struct {
 	optionsContent    fyne.CanvasObject
 	disconnectedHint  fyne.CanvasObject
 	bottomStack       *fyne.Container
+
+	// theme
+	themeManager     *ThemeManager
+	themeSystemItem  *fyne.MenuItem
+	themeDarkItem    *fyne.MenuItem
+	themeLightItem   *fyne.MenuItem
 }
 
 func (a *App) isIgnored(key string) bool {
@@ -96,7 +102,6 @@ func (a *App) disconnectAliases(devIDs map[string]bool) {
 
 func NewApp(debug bool) *App {
 	fyneApp := app.NewWithID("com.mirroid.app")
-	fyneApp.Settings().SetTheme(theme.DarkTheme())
 
 	cfg, err := config.New()
 	if err != nil {
@@ -110,6 +115,8 @@ func NewApp(debug bool) *App {
 		options: model.DefaultOptions(),
 		debug:   debug,
 	}
+
+	a.themeManager = NewThemeManager(a.fyneApp, a.cfg, a.window)
 
 	a.logsPanel = NewLogsPanel()
 	a.logsPanel.SetApp(a)
