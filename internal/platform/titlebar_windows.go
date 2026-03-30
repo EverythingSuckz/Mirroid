@@ -3,7 +3,6 @@
 package platform
 
 import (
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -19,7 +18,7 @@ const (
 )
 
 var (
-	user32           = syscall.NewLazyDLL("user32.dll")
+	user32           = windows.NewLazySystemDLL("user32.dll")
 	procSetWindowPos = user32.NewProc("SetWindowPos")
 )
 
