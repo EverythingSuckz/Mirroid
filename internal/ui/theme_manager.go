@@ -184,7 +184,7 @@ func (tm *ThemeManager) startSystemWatcher() {
 					fyne.Do(func() {
 						tm.mu.Lock()
 						defer tm.mu.Unlock()
-						if tm.mode == config.ThemeModeSystem || tm.mode == "" {
+						if tm.mode == config.ThemeModeSystem {
 							tm.applyTheme()
 						}
 					})
