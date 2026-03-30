@@ -50,13 +50,20 @@ type ThemeManager struct {
 	mu          sync.Mutex
 }
 
+// normalizeMode maps unrecognised or empty values to ThemeModeSystem.
+func normalizeMode(m config.ThemeMode) config.ThemeMode {
+	switch m {
+	case config.ThemeModeSystem, config.ThemeModeDark, config.ThemeModeLight:
+		return m
+	default:
+		return config.ThemeModeSystem
+	}
+}
+
 // NewThemeManager reads the saved preference, applies it, and starts the
 // OS watcher if in system mode.
 func NewThemeManager(app fyne.App, cfg *config.Config, window fyne.Window) *ThemeManager {
-	mode := cfg.AppConf.ThemeMode
-	if mode == "" {
-		mode = config.ThemeModeSystem
-	}
+	mode := normalizeMode(cfg.AppConf.ThemeMode)
 
 	tm := &ThemeManager{
 		app:    app,
@@ -81,6 +88,7 @@ func (tm *ThemeManager) SetMode(mode config.ThemeMode) {
 
 	tm.stopWatcherLocked()
 
+	mode = normalizeMode(mode)
 	tm.mode = mode
 	tm.cfg.AppConf.ThemeMode = mode
 	if err := tm.cfg.SaveAppConfig(); err != nil {
@@ -98,10 +106,7 @@ func (tm *ThemeManager) SetMode(mode config.ThemeMode) {
 func (tm *ThemeManager) Mode() config.ThemeMode {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
-	if tm.mode == "" {
-		return config.ThemeModeSystem
-	}
-	return tm.mode
+	return normalizeMode(tm.mode)
 }
 
 // RefreshTitleBar re-applies the title bar attribute once the native
