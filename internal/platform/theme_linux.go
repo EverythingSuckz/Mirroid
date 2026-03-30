@@ -3,15 +3,20 @@
 package platform
 
 import (
+	"context"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // SystemThemeIsDark queries the freedesktop color-scheme setting via
 // the org.freedesktop.portal.Settings D-Bus interface.
 // returns true when the desktop prefers dark mode.
 func SystemThemeIsDark() bool {
-	out, err := exec.Command(
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx,
 		"dbus-send", "--session", "--print-reply=literal",
 		"--dest=org.freedesktop.portal.Desktop",
 		"/org/freedesktop/portal/desktop",

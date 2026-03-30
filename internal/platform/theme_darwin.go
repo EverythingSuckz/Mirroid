@@ -3,16 +3,21 @@
 package platform
 
 import (
+	"context"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // SystemThemeIsDark checks the macOS AppleInterfaceStyle user default.
 // returns true when set to "Dark", false otherwise.
 func SystemThemeIsDark() bool {
-	out, err := exec.Command("defaults", "read", "-g", "AppleInterfaceStyle").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "defaults", "read", "-g", "AppleInterfaceStyle").Output()
 	if err != nil {
-		return false // missing key means light mode
+		return false
 	}
 	return strings.TrimSpace(string(out)) == "Dark"
 }
