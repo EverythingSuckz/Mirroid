@@ -2,7 +2,7 @@ package ui
 
 import (
 	"context"
-	"log/slog"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,12 +100,12 @@ func (a *App) disconnectAliases(devIDs map[string]bool) {
 	}
 }
 
-func NewApp(debug bool) *App {
+func NewApp(debug bool) (*App, error) {
 	fyneApp := app.NewWithID("com.mirroid.app")
 
 	cfg, err := config.New()
 	if err != nil {
-		slog.Error("failed to initialize config", "error", err)
+		return nil, fmt.Errorf("initialize config: %w", err)
 	}
 
 	a := &App{
@@ -125,7 +125,7 @@ func NewApp(debug bool) *App {
 	a.presetsPanel = NewPresetsPanel(a)
 	a.deviceInfoPanel = NewDeviceInfoPanel(a)
 
-	return a
+	return a, nil
 }
 
 func (a *App) Run() {
