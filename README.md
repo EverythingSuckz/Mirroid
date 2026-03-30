@@ -1,5 +1,5 @@
 > [!WARNING]
-> This project is under development and is not yet ready for use. Expect frequent breaking changes until the `1.0.0` release.
+> This project is under development. Expect frequent breaking changes until the `1.0.0` release.
 
 <p align="center">
   <img src="assets/icon.png" alt="Mirroid" width="128" />
@@ -8,10 +8,11 @@
 <h1 align="center">Mirroid</h1>
 
 <p align="center">
-  A full-featured desktop GUI for <a href="https://github.com/Genymobile/scrcpy">scrcpy</a>, built with Go and <a href="https://fyne.io/">Fyne</a>.
+  Yet another GUI for <a href="https://github.com/Genymobile/scrcpy">scrcpy</a>, built with Go and <a href="https://fyne.io/">Fyne</a>.
 </p>
 
 ---
+
 <br>
 <p align="center">
   <img src="assets/screenshot.png" alt="Mirroid Screenshot" width="80%" />
@@ -20,50 +21,40 @@
 ## Features
 
 - **Easy Pairing** : pair devices via USB or wireless QR code with a single click
-- **Full scrcpy Options** : bitrate, max size, FPS, codec (h264/h265/av1), audio, window flags, HID input, recording
+- **Full scrcpy Options** : bitrate, max size, FPS, codec (h264/h265/av1), audio, window flags, HID input, ~~recording~~
 - **Presets** : save and load option configurations as JSON
 - **Multi-device** : launch scrcpy on multiple devices simultaneously
 - **Cross-platform** : works on Windows, macOS, and Linux (only tested on Windows so far)
-- **Single Executable** : no dependencies, just one binary to run
+- **Single Executable** : no dependencies, no electron, just one binary to run
 
 ## Why make this?
 
 Tired of typing out long scrcpy commands in the terminal. Wanted a simple way to manage multiple devices and configurations without memorizing flags.
 
-## Requirements
-
-| Dependency | Notes |
-|---|---|
-| **adb** | Android Debug Bridge, must be in `PATH` |
-| **scrcpy** | Must be installed and in `PATH` |
-| **Go 1.22+** | For building from source (Optional) |
-
-
 ## Installation
 
-Download the latest release from [Releases](https://github.com/EverythingSuckz/Mirroid/releases):
+Download the latest release from [Releases](https://github.com/EverythingSuckz/Mirroid/releases) or by clicking the appropriate link below:
 
-| Platform | Recommended | Alternative |
-|---|---|---|
-| **Windows** | `.exe` installer (setup wizard) | Standalone `.exe` |
-| **Linux** | `.deb` (Debian/Ubuntu) or `.AppImage` (any distro) | `.tar.xz` |
-| **macOS** | `.dmg` (drag to Applications) | `.zip` |
-
-> [!IMPORTANT]
-> **adb** and **scrcpy** must be installed and available in your `PATH` before running Mirroid.
+| Platform    | Recommended                                                                                                                                                       | Alternative                                                                                                               |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Windows** | [Installer](https://github.com/EverythingSuckz/Mirroid/releases/latest/download/mirroid-windows-amd64-setup.exe)                                                  | [Portable `.zip`](https://github.com/EverythingSuckz/Mirroid/releases/latest/download/mirroid-windows-amd64-portable.zip) |
+| **Linux**   | [`.deb` (Debian/Ubuntu)](https://github.com/EverythingSuckz/Mirroid/releases/latest) or [`.AppImage`](https://github.com/EverythingSuckz/Mirroid/releases/latest) | [`.tar.xz`](https://github.com/EverythingSuckz/Mirroid/releases/latest)                                                   |
+| **macOS**   | [`.dmg` (drag to Applications)](https://github.com/EverythingSuckz/Mirroid/releases/latest/download/mirroid-macos-arm64.dmg)                                      | [`.zip`](https://github.com/EverythingSuckz/Mirroid/releases/latest/download/mirroid-macos-arm64.zip)                     |
 
 ## Building
 
 #### Debug build:
+
 ```bash
 go build -o mirroid.exe .
 ```
 
 #### Release build with embedded assets:
+
 ```bash
 fyne package -release
 ```
 
 ## License
 
-MIT
+This project is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.
