@@ -54,6 +54,7 @@ func New() (*Config, error) {
 			ScrcpyPath:       "scrcpy",
 			ADBPath:          "adb",
 			AutoCheckUpdates: true,
+			ThemeMode:        ThemeModeSystem,
 		},
 	}
 
