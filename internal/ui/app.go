@@ -25,12 +25,12 @@ import (
 )
 
 const (
-	defaultWindowWidth  = 900
+	defaultWindowWidth  = 1100
 	defaultWindowHeight = 700
 	emptyStateIconSize  = 96
 	hintIconSize        = 64
-	leftSplitOffset     = 0.35
-	mainSplitOffset     = 0.5
+	leftSplitOffset     = 0.60
+	mainSplitOffset     = 0.7
 )
 
 type App struct {
@@ -46,26 +46,30 @@ type App struct {
 	ignoredAddrs sync.Map
 
 	// ui panels
-	devicePanel             *DevicePanel
-	optionsPanel            *OptionsPanel
-	presetsPanel            *PresetsPanel
-	logsPanel               *LogsPanel
-	deviceInfoPanel         *DeviceInfoPanel
+	devicePanel     *DevicePanel
+	optionsPanel    *OptionsPanel
+	presetsPanel    *PresetsPanel
+	logsPanel       *LogsPanel
+	deviceInfoPanel *DeviceInfoPanel
 	// layout states: empty (no devices) vs connected (has devices)
 	emptyState     fyne.CanvasObject
 	connectedState fyne.CanvasObject
 	rootContainer  *fyne.Container
 
 	// bottom area: swaps between options/presets and disconnected hint
-	optionsContent    fyne.CanvasObject
-	disconnectedHint  fyne.CanvasObject
-	bottomStack       *fyne.Container
+	optionsContent   fyne.CanvasObject
+	disconnectedHint fyne.CanvasObject
+	bottomStack      *fyne.Container
+	leftSplit        *container.Split
+	deviceSection    fyne.CanvasObject
+	leftPanelStack   *fyne.Container
+	optionsMenuItem  *fyne.MenuItem
 
 	// theme
-	themeManager     *ThemeManager
-	themeSystemItem  *fyne.MenuItem
-	themeDarkItem    *fyne.MenuItem
-	themeLightItem   *fyne.MenuItem
+	themeManager    *ThemeManager
+	themeSystemItem *fyne.MenuItem
+	themeDarkItem   *fyne.MenuItem
+	themeLightItem  *fyne.MenuItem
 }
 
 func (a *App) isIgnored(key string) bool {
@@ -281,4 +285,3 @@ func (a *App) onLaunch() {
 		}
 	}
 }
-

@@ -42,16 +42,23 @@ func (a *App) buildMainUI() {
 		a.themeDarkItem,
 		a.themeLightItem,
 	)
-	viewMenu := fyne.NewMenu("View", themeItem)
 
-	logsMenu := fyne.NewMenu("Logs",
-		fyne.NewMenuItem("View Logs", func() {
-			a.logsPanel.ShowWindow()
-		}),
-		fyne.NewMenuItem("Clear Logs", func() {
-			a.logsPanel.Clear()
-		}),
-	)
+	a.optionsMenuItem = fyne.NewMenuItem("Options Panel", func() {
+		if a.optionsMenuItem.Checked {
+			// hide: replace split with device section only
+			a.leftPanelStack.Objects = []fyne.CanvasObject{a.deviceSection}
+			a.leftPanelStack.Refresh()
+			a.optionsMenuItem.Checked = false
+		} else {
+			// show: restore the split view
+			a.leftPanelStack.Objects = []fyne.CanvasObject{a.leftSplit}
+			a.leftPanelStack.Refresh()
+			a.optionsMenuItem.Checked = true
+		}
+	})
+	a.optionsMenuItem.Checked = true
+
+	viewMenu := fyne.NewMenu("View", themeItem, a.optionsMenuItem)
 
 	deviceMenu := fyne.NewMenu("Device",
 		fyne.NewMenuItem("Pair New Device", func() {
@@ -63,6 +70,10 @@ func (a *App) buildMainUI() {
 	)
 
 	aboutMenu := fyne.NewMenu("About",
+		fyne.NewMenuItem("View Logs", func() {
+			a.logsPanel.ShowWindow()
+		}),
+		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("About Mirroid", func() {
 			a.showAboutDialog()
 		}),
@@ -71,7 +82,7 @@ func (a *App) buildMainUI() {
 		}),
 	)
 
-	mainMenu := fyne.NewMainMenu(viewMenu, deviceMenu, logsMenu, aboutMenu)
+	mainMenu := fyne.NewMainMenu(viewMenu, deviceMenu, aboutMenu)
 	a.window.SetMainMenu(mainMenu)
 
 	// Empty state
@@ -109,9 +120,9 @@ func (a *App) buildMainUI() {
 	)
 
 	// Connected state
-	deviceSection := widget.NewCard("Devices", "", a.devicePanel.Build())
+	a.deviceSection = widget.NewCard("Devices", "", a.devicePanel.Build())
 
-	topArea := deviceSection
+	topArea := a.deviceSection
 
 	// Bottom area: options with inline preset controls in the header
 	optionsTitle := widget.NewLabelWithStyle("Options", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
@@ -137,13 +148,15 @@ func (a *App) buildMainUI() {
 
 	a.bottomStack = container.NewStack(a.optionsContent, a.disconnectedHint)
 
-	leftSplit := container.NewVSplit(topArea, a.bottomStack)
-	leftSplit.SetOffset(leftSplitOffset)
-	leftPanel := leftSplit
+	a.leftSplit = container.NewVSplit(topArea, a.bottomStack)
+	a.leftSplit.SetOffset(leftSplitOffset)
+
+	// stack lets us swap between split view (with options) and device-only view
+	a.leftPanelStack = container.NewStack(a.leftSplit)
 
 	rightPanel := a.deviceInfoPanel.Build()
 
-	split := container.NewHSplit(leftPanel, rightPanel)
+	split := container.NewHSplit(a.leftPanelStack, rightPanel)
 	split.SetOffset(mainSplitOffset)
 
 	a.connectedState = split
