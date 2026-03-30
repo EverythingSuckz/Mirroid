@@ -15,11 +15,35 @@ import (
 	fynetooltip "github.com/dweymouth/fyne-tooltip"
 
 	"mirroid/internal/adb"
+	"mirroid/internal/config"
 	"mirroid/internal/deps"
 )
 
 // buildMainUI sets up the menu, panels, device refresh goroutines, and window content.
 func (a *App) buildMainUI() {
+	// Theme submenu items (View > Theme > System / Dark / Light)
+	a.themeSystemItem = fyne.NewMenuItem("System", func() {
+		a.themeManager.SetMode(config.ThemeModeSystem)
+		a.updateThemeMenuChecks()
+	})
+	a.themeDarkItem = fyne.NewMenuItem("Dark", func() {
+		a.themeManager.SetMode(config.ThemeModeDark)
+		a.updateThemeMenuChecks()
+	})
+	a.themeLightItem = fyne.NewMenuItem("Light", func() {
+		a.themeManager.SetMode(config.ThemeModeLight)
+		a.updateThemeMenuChecks()
+	})
+	a.updateThemeMenuChecks()
+
+	themeItem := fyne.NewMenuItem("Theme", nil)
+	themeItem.ChildMenu = fyne.NewMenu("",
+		a.themeSystemItem,
+		a.themeDarkItem,
+		a.themeLightItem,
+	)
+	viewMenu := fyne.NewMenu("View", themeItem)
+
 	logsMenu := fyne.NewMenu("Logs",
 		fyne.NewMenuItem("View Logs", func() {
 			a.logsPanel.ShowWindow()
@@ -47,7 +71,7 @@ func (a *App) buildMainUI() {
 		}),
 	)
 
-	mainMenu := fyne.NewMainMenu(deviceMenu, logsMenu, aboutMenu)
+	mainMenu := fyne.NewMainMenu(viewMenu, deviceMenu, logsMenu, aboutMenu)
 	a.window.SetMainMenu(mainMenu)
 
 	// Empty state
@@ -138,12 +162,21 @@ func (a *App) buildMainUI() {
 
 	a.window.SetOnClosed(func() {
 		cancel()
+		a.themeManager.Stop()
 		if a.runner != nil {
 			a.runner.StopAll()
 		}
 	})
 
 	go a.devicePanel.refreshDevices()
+
+	// apply title bar theme once the native window handle exists.
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		fyne.Do(func() {
+			a.themeManager.RefreshTitleBar()
+		})
+	}()
 
 	if a.debug {
 		slog.Debug("debug mode: opening logs panel")
@@ -193,6 +226,14 @@ func (a *App) setOptionsAreaVisible(show bool) {
 		a.optionsContent.Hide()
 		a.disconnectedHint.Show()
 	}
+}
+
+// updateThemeMenuChecks syncs menu checkmarks with the current theme mode.
+func (a *App) updateThemeMenuChecks() {
+	mode := a.themeManager.Mode()
+	a.themeSystemItem.Checked = (mode == config.ThemeModeSystem)
+	a.themeDarkItem.Checked = (mode == config.ThemeModeDark)
+	a.themeLightItem.Checked = (mode == config.ThemeModeLight)
 }
 
 // showMissingDepsDialog shows an informational dialog listing missing dependencies.

@@ -2,7 +2,7 @@ package ui
 
 import (
 	"context"
-	"log/slog"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,6 +60,12 @@ type App struct {
 	optionsContent    fyne.CanvasObject
 	disconnectedHint  fyne.CanvasObject
 	bottomStack       *fyne.Container
+
+	// theme
+	themeManager     *ThemeManager
+	themeSystemItem  *fyne.MenuItem
+	themeDarkItem    *fyne.MenuItem
+	themeLightItem   *fyne.MenuItem
 }
 
 func (a *App) isIgnored(key string) bool {
@@ -94,13 +100,12 @@ func (a *App) disconnectAliases(devIDs map[string]bool) {
 	}
 }
 
-func NewApp(debug bool) *App {
+func NewApp(debug bool) (*App, error) {
 	fyneApp := app.NewWithID("com.mirroid.app")
-	fyneApp.Settings().SetTheme(theme.DarkTheme())
 
 	cfg, err := config.New()
 	if err != nil {
-		slog.Error("failed to initialize config", "error", err)
+		return nil, fmt.Errorf("initialize config: %w", err)
 	}
 
 	a := &App{
@@ -111,6 +116,8 @@ func NewApp(debug bool) *App {
 		debug:   debug,
 	}
 
+	a.themeManager = NewThemeManager(a.fyneApp, a.cfg, a.window)
+
 	a.logsPanel = NewLogsPanel()
 	a.logsPanel.SetApp(a)
 	a.devicePanel = NewDevicePanel(a)
@@ -118,7 +125,7 @@ func NewApp(debug bool) *App {
 	a.presetsPanel = NewPresetsPanel(a)
 	a.deviceInfoPanel = NewDeviceInfoPanel(a)
 
-	return a
+	return a, nil
 }
 
 func (a *App) Run() {

@@ -22,6 +22,10 @@ func main() {
 
 	slog.Info("starting Mirroid", "debug", *debug)
 
-	app := ui.NewApp(*debug)
+	app, err := ui.NewApp(*debug)
+	if err != nil {
+		slog.Error("failed to start", "error", err)
+		os.Exit(1)
+	}
 	app.Run()
 }
