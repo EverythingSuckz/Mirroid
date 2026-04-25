@@ -97,6 +97,21 @@ type infoView struct {
 	uptime     *styledText
 	appCount   *styledText
 	buildID    *styledText
+
+	refreshBtn  *ttwidget.Button
+	refreshSpin *rotatingIcon
+}
+
+func (v *infoView) startRefresh() {
+	v.refreshBtn.Hide()
+	v.refreshSpin.Show()
+	v.refreshSpin.Start()
+}
+
+func (v *infoView) stopRefresh() {
+	v.refreshSpin.Stop()
+	v.refreshSpin.Hide()
+	v.refreshBtn.Show()
 }
 
 func NewDeviceInfoPanel(app *App) *DeviceInfoPanel {
@@ -151,14 +166,20 @@ func (dip *DeviceInfoPanel) LoadDeviceInfo(serial string) {
 		dip.cancelLoad = cancel
 		dip.currentSerial = serial
 		dip.app.setOptionsAreaVisible(true)
-		dip.activity.Start()
-		dip.activity.Show()
-		loading := container.NewCenter(container.NewVBox(
-			dip.activity,
-			widget.NewLabel("Loading device info..."),
-		))
-		dip.container.Objects = []fyne.CanvasObject{loading}
-		dip.container.Refresh()
+
+		inPlace := dip.info != nil && dip.info.serial == serial
+		if inPlace {
+			dip.info.startRefresh()
+		} else {
+			dip.activity.Start()
+			dip.activity.Show()
+			loading := container.NewCenter(container.NewVBox(
+				dip.activity,
+				widget.NewLabel("Loading device info..."),
+			))
+			dip.container.Objects = []fyne.CanvasObject{loading}
+			dip.container.Refresh()
+		}
 
 		go func() {
 			info, err := dip.app.adbClient.GetDeviceInfo(ctx, serial)
@@ -166,7 +187,12 @@ func (dip *DeviceInfoPanel) LoadDeviceInfo(serial string) {
 				if dip.currentSerial != serial || ctx.Err() != nil {
 					return
 				}
-				dip.activity.Stop()
+				if !inPlace {
+					dip.activity.Stop()
+				}
+				if dip.info != nil && dip.info.serial == serial {
+					dip.info.stopRefresh()
+				}
 				switch {
 				case err == nil:
 					if dip.info != nil && dip.info.serial == serial {
@@ -233,14 +259,21 @@ func (dip *DeviceInfoPanel) newInfoView(serial string, info adb.DeviceInfo) *inf
 	v.heroName = heroName
 	v.heroAddress = heroAddress
 
-	refreshBtn := ttwidget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() {
+	v.refreshBtn = ttwidget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() {
 		go dip.LoadDeviceInfo(serial)
 	})
-	refreshBtn.Importance = widget.LowImportance
-	refreshBtn.SetToolTip("Refresh device info")
+	v.refreshBtn.Importance = widget.LowImportance
+	v.refreshBtn.SetToolTip("Refresh device info")
+
+	v.refreshSpin = newRotatingIcon(theme.ViewRefreshIcon())
+	v.refreshSpin.Hide()
+	spacer := canvas.NewRectangle(color.Transparent)
+	spacer.SetMinSize(v.refreshBtn.MinSize())
+	spinSlot := container.NewStack(spacer, container.NewCenter(v.refreshSpin))
+	refreshSlot := container.NewStack(v.refreshBtn, spinSlot)
 
 	stickyTop := container.NewVBox(
-		container.NewBorder(nil, nil, nil, refreshBtn, container.NewPadded(heroHeader)),
+		container.NewBorder(nil, nil, nil, refreshSlot, container.NewPadded(heroHeader)),
 		widget.NewSeparator(),
 	)
 
