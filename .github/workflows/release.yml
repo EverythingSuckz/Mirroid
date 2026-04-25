@@ -192,9 +192,16 @@ jobs:
 
       - name: Ad-hoc codesign app bundle (macOS)
         if: matrix.target == 'darwin'
-        # Sign each nested binary first, then sign the outer bundle without
-        # --deep (Apple has deprecated --deep; per-binary signing is the
-        # supported approach).
+        # Ad-hoc (-) signatures only seal the bundle's contents — they do NOT
+        # satisfy notarization or Gatekeeper. Users who download the .dmg/.zip
+        # will see "Mirroid is damaged and can't be opened" or a Gatekeeper
+        # block until they run:
+        #     xattr -dr com.apple.quarantine /Applications/Mirroid.app
+        # or right-click the app → Open → Open.
+        # Replace the - identity with a Developer ID and add
+        # --options runtime --timestamp once the project has one.
+        # Per-binary signing first, then the outer bundle without --deep
+        # (Apple has deprecated --deep; per-binary is the supported approach).
         run: |
           codesign --force --sign - Mirroid.app/Contents/MacOS/adb
           codesign --force --sign - Mirroid.app/Contents/MacOS/scrcpy

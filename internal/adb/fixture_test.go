@@ -27,27 +27,9 @@ func TestFixtureDumpsysWifi(t *testing.T) {
 
 func TestFixtureDumpsysBattery(t *testing.T) {
 	out := loadFixture(t, "dumpsys_battery.txt")
-	// reuse the same parsing loop the production code uses
-	var level, status, temp, health string
-	for _, line := range strings.Split(out, "\n") {
-		key, val, ok := strings.Cut(strings.TrimSpace(line), ":")
-		if !ok {
-			continue
-		}
-		val = strings.TrimSpace(val)
-		switch key {
-		case "level":
-			level = val
-		case "status":
-			status = val
-		case "temperature":
-			temp = val
-		case "health":
-			health = val
-		}
-	}
-	if level != "73" {
-		t.Errorf("level = %q, want %q", level, "73")
+	level, status, temp, health := parseDumpsysBattery(out)
+	if level != 73 {
+		t.Errorf("level = %d, want 73", level)
 	}
 	if got := parseBatteryStatus(status); got != "Charging" {
 		t.Errorf("battery status = %q, want %q", got, "Charging")
@@ -67,14 +49,14 @@ func TestFixtureDfK(t *testing.T) {
 		t.Fatalf("expected >=2 lines, got %d", len(lines))
 	}
 	total, used, free, pct := parseStorageLine(lines[1])
-	if total != "60.0G" {
-		t.Errorf("total = %q, want %q", total, "60.0G")
+	if total != "60.0 GB" {
+		t.Errorf("total = %q, want %q", total, "60.0 GB")
 	}
-	if used != "37.3G" {
-		t.Errorf("used = %q, want %q", used, "37.3G")
+	if used != "37.3 GB" {
+		t.Errorf("used = %q, want %q", used, "37.3 GB")
 	}
-	if free != "22.7G" {
-		t.Errorf("free = %q, want %q", free, "22.7G")
+	if free != "22.7 GB" {
+		t.Errorf("free = %q, want %q", free, "22.7 GB")
 	}
 	if pct < 0.61 || pct > 0.63 {
 		t.Errorf("pct = %v, want ~0.62", pct)

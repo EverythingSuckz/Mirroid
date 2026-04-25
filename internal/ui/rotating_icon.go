@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"log"
 	"math"
 	"strings"
 	"sync"
@@ -95,22 +96,19 @@ func (r *rotatingIcon) render() {
 		r.base = rasterizeSVG(r.src, fg, rotatingIconSrcSize)
 		r.baseColor = key
 	}
-	angle := r.angle
-	r.mu.Unlock()
 
-	for i := range r.rotated.Pix {
-		r.rotated.Pix[i] = 0
-	}
+	clear(r.rotated.Pix)
 
 	cx := float64(rotatingIconSrcSize) / 2
 	cy := float64(rotatingIconSrcSize) / 2
-	rad := float64(angle) * math.Pi / 180
+	rad := float64(r.angle) * math.Pi / 180
 	cos, sin := math.Cos(rad), math.Sin(rad)
 	m := f64.Aff3{
 		cos, -sin, cx - cos*cx + sin*cy,
 		sin, cos, cy - sin*cx - cos*cy,
 	}
 	xdraw.BiLinear.Transform(r.rotated, m, r.base, r.base.Bounds(), xdraw.Over, nil)
+	r.mu.Unlock()
 
 	canvas.Refresh(r.img)
 }
@@ -119,6 +117,7 @@ func rasterizeSVG(res fyne.Resource, fg color.Color, size int) *image.RGBA {
 	content := strings.ReplaceAll(string(res.Content()), "currentColor", rgbaToHex(fg))
 	icon, err := oksvg.ReadIconStream(bytes.NewReader([]byte(content)))
 	if err != nil {
+		log.Printf("rotating_icon: parse %s: %v", res.Name(), err)
 		return image.NewRGBA(image.Rect(0, 0, size, size))
 	}
 	icon.SetTarget(0, 0, float64(size), float64(size))

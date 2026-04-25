@@ -222,6 +222,9 @@ func (dip *DeviceInfoPanel) cancelInflightLocked() {
 		dip.cancelLoad()
 		dip.cancelLoad = nil
 	}
+	if dip.activity != nil {
+		dip.activity.Stop()
+	}
 }
 
 func (dip *DeviceInfoPanel) RefreshActions() {

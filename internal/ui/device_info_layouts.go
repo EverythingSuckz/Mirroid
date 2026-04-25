@@ -64,7 +64,13 @@ func (p *progressBarLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 	objects[0].Resize(fyne.NewSize(barWidth, progressBarHeight))
 	objects[0].Move(fyne.NewPos(0, y))
 
-	fgWidth := barWidth * float32(p.pct)
+	pct := p.pct
+	if pct < 0 {
+		pct = 0
+	} else if pct > 1 {
+		pct = 1
+	}
+	fgWidth := barWidth * float32(pct)
 	objects[1].Resize(fyne.NewSize(fgWidth, progressBarHeight))
 	objects[1].Move(fyne.NewPos(0, y))
 }

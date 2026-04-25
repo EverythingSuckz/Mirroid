@@ -152,11 +152,10 @@ func buildInfoPill(icon fyne.Resource, text string, pillColor color.Color) fyne.
 }
 
 func batteryStatusColor(status string) color.Color {
-	lower := strings.ToLower(status)
-	switch {
-	case strings.Contains(lower, "charging"), strings.Contains(lower, "full"):
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "charging", "full":
 		return pillGreen
-	case strings.Contains(lower, "discharging"):
+	case "discharging":
 		return pillRed
 	default:
 		return pillGray

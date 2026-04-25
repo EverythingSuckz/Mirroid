@@ -7,6 +7,32 @@ import (
 	"strings"
 )
 
+// parseDumpsysBattery extracts level/status/temp/health from `dumpsys battery`.
+// level is -1 when missing.
+func parseDumpsysBattery(output string) (level int, status, temp, health string) {
+	level = -1
+	for _, line := range strings.Split(output, "\n") {
+		key, val, ok := strings.Cut(strings.TrimSpace(line), ":")
+		if !ok {
+			continue
+		}
+		val = strings.TrimSpace(val)
+		switch key {
+		case "level":
+			if n, err := strconv.Atoi(val); err == nil && n >= 0 {
+				level = n
+			}
+		case "status":
+			status = val
+		case "temperature":
+			temp = val
+		case "health":
+			health = val
+		}
+	}
+	return
+}
+
 func parseBatteryStatus(code string) string {
 	switch code {
 	case "1":
@@ -97,12 +123,12 @@ func parseStorageLine(line string) (total, used, free string, pct float64) {
 	}
 
 	pctStr := strings.TrimSuffix(fields[4], "%")
-	pctVal, err := strconv.ParseFloat(pctStr, 64)
-	if err != nil {
-		return "-", "-", "-", 0.0
+	if pctVal, err := strconv.ParseFloat(pctStr, 64); err == nil {
+		pct = pctVal / 100.0
+	} else {
+		// fall back to computing pct from used/total when Use% is unparseable
+		pct = float64(usedKB) / float64(totalKB)
 	}
-
-	pct = pctVal / 100.0
 	if pct < 0.0 {
 		pct = 0.0
 	}
@@ -115,13 +141,13 @@ func parseStorageLine(line string) (total, used, free string, pct float64) {
 func formatKB(kb int64) string {
 	switch {
 	case kb >= 1<<30:
-		return fmt.Sprintf("%.1fT", float64(kb)/(1<<30))
+		return fmt.Sprintf("%.1f TB", float64(kb)/(1<<30))
 	case kb >= 1<<20:
-		return fmt.Sprintf("%.1fG", float64(kb)/(1<<20))
+		return fmt.Sprintf("%.1f GB", float64(kb)/(1<<20))
 	case kb >= 1<<10:
-		return fmt.Sprintf("%.0fM", float64(kb)/(1<<10))
+		return fmt.Sprintf("%.0f MB", float64(kb)/(1<<10))
 	default:
-		return fmt.Sprintf("%dK", kb)
+		return fmt.Sprintf("%d KB", kb)
 	}
 }
 
@@ -310,7 +336,6 @@ func parseIPAddress(ipAddrOutput string) string {
 	var wlan0, wlan1, otherWlan string
 	for _, line := range strings.Split(ipAddrOutput, "\n") {
 		trimmed := strings.TrimSpace(line)
-		// look for "inet 1.2.3.4/24" anywhere in the line
 		i := strings.Index(trimmed, "inet ")
 		if i < 0 {
 			continue
@@ -326,16 +351,34 @@ func parseIPAddress(ipAddrOutput string) string {
 		if addr == "" || strings.HasPrefix(addr, "127.") || strings.HasPrefix(addr, "169.254.") {
 			continue
 		}
+		hasIface := func(name string) bool {
+			for _, f := range strings.Fields(trimmed) {
+				f = strings.TrimRight(f, `:\`)
+				if f == name {
+					return true
+				}
+			}
+			return false
+		}
+		hasAnyWlan := func() bool {
+			for _, f := range strings.Fields(trimmed) {
+				f = strings.TrimRight(f, `:\`)
+				if strings.HasPrefix(f, "wlan") {
+					return true
+				}
+			}
+			return false
+		}
 		switch {
-		case strings.Contains(trimmed, "wlan0"):
+		case hasIface("wlan0"):
 			if wlan0 == "" {
 				wlan0 = addr
 			}
-		case strings.Contains(trimmed, "wlan1"):
+		case hasIface("wlan1"):
 			if wlan1 == "" {
 				wlan1 = addr
 			}
-		case strings.Contains(trimmed, "wlan"):
+		case hasAnyWlan():
 			if otherWlan == "" {
 				otherWlan = addr
 			}

@@ -97,10 +97,10 @@ func TestParseStorageLine(t *testing.T) {
 		wantPctApprox       float64
 		wantPctApproxMargin float64
 	}{
-		// df -k output: 62914556 1k-blocks ≈ 60.0G
+		// df -k output: 62914556 1k-blocks ≈ 60.0 GB
 		{
 			"/dev/block/dm-48    62914556    39061408    23853148  62% /data",
-			"60.0G", "37.3G", "22.7G", 0.62, 0.01,
+			"60.0 GB", "37.3 GB", "22.7 GB", 0.62, 0.01,
 		},
 		{"", "-", "-", "-", 0.0, 0.0},
 		{"garbage", "-", "-", "-", 0.0, 0.0},
@@ -245,7 +245,7 @@ func TestParseResolution(t *testing.T) {
 	}
 	for _, tt := range tests {
 		if got := parseResolution(tt.input); got != tt.want {
-			t.Errorf("parseResolution(%q) = %q, want %q", tt.name, got, tt.want)
+			t.Errorf("parseResolution(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
 }

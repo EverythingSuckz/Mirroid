@@ -80,12 +80,13 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 
 	g, gctx := errgroup.WithContext(ctx)
 
-	// anchor: getprop failure means device is unreachable
+	// anchor: getprop failure means device is unreachable. propagate err to
+	// short-circuit the other goroutines via gctx cancellation.
 	g.Go(func() error {
 		out, err := c.shellOutput(gctx, serial, "getprop")
 		if err != nil {
 			propsErr = err
-			return nil
+			return err
 		}
 		propMap = parseGetProps(string(out))
 		return nil
@@ -156,27 +157,7 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 		return DeviceInfo{Serial: serial}, fmt.Errorf("getprop failed (device offline?): %w", propsErr)
 	}
 
-	batteryLevel := -1
-	var batteryStatus, batteryTemp, batteryHealth string
-	for _, line := range strings.Split(string(battOut), "\n") {
-		key, val, ok := strings.Cut(strings.TrimSpace(line), ":")
-		if !ok {
-			continue
-		}
-		val = strings.TrimSpace(val)
-		switch key {
-		case "level":
-			if n, err := strconv.Atoi(val); err == nil && n >= 0 {
-				batteryLevel = n
-			}
-		case "status":
-			batteryStatus = val
-		case "temperature":
-			batteryTemp = val
-		case "health":
-			batteryHealth = val
-		}
-	}
+	batteryLevel, batteryStatus, batteryTemp, batteryHealth := parseDumpsysBattery(string(battOut))
 	batteryPct := 0.0
 	if batteryLevel >= 0 {
 		batteryPct = float64(batteryLevel) / 100.0
@@ -230,6 +211,9 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 	}
 
 	densityDisplay := prop("ro.sf.lcd_density")
+	if densityDisplay == fieldUnknown {
+		densityDisplay = prop("ro.lcd_density")
+	}
 	if densityDisplay != fieldUnknown {
 		densityDisplay += " dpi"
 	}
