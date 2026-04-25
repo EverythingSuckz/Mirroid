@@ -190,6 +190,16 @@ jobs:
           cp _bundled/* Mirroid.app/Contents/MacOS/
           chmod +x Mirroid.app/Contents/MacOS/adb Mirroid.app/Contents/MacOS/scrcpy
 
+      - name: Ad-hoc codesign app bundle (macOS)
+        if: matrix.target == 'darwin'
+        # Sign each nested binary first, then sign the outer bundle without
+        # --deep (Apple has deprecated --deep; per-binary signing is the
+        # supported approach).
+        run: |
+          codesign --force --sign - Mirroid.app/Contents/MacOS/adb
+          codesign --force --sign - Mirroid.app/Contents/MacOS/scrcpy
+          codesign --force --sign - Mirroid.app
+
       - name: Zip app bundle (macOS)
         if: matrix.target == 'darwin'
         run: zip -r mirroid-macos-arm64.zip Mirroid.app
