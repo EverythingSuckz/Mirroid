@@ -1,0 +1,37 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  bin = "tmp/mirroid.exe"
+  cmd = "go build -o tmp/mirroid.exe ."
+  delay = 500
+  exclude_dir = [
+    "tmp",
+    "vendor",
+    "testdata",
+    "_bundled",
+    "AppDir",
+    "deb-root",
+    "packaging",
+    ".git",
+    ".idea",
+    ".vscode",
+    ".superpowers",
+  ]
+  exclude_regex = ["_test\\.go$"]
+  include_ext = ["go", "svg"]
+  kill_delay = "200ms"
+  log = "build-errors.log"
+  send_interrupt = false
+  stop_on_error = false
+
+[log]
+  main_only = false
+  time = true
+
+[misc]
+  clean_on_exit = false
+
+[screen]
+  clear_on_rebuild = true
+  keep_scroll = true

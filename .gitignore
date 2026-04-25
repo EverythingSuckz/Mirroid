@@ -50,3 +50,7 @@ linuxdeploy-*.AppImage
 # cc
 .sup*
 *.md
+
+# air (hot reload)
+tmp/
+build-errors.log
