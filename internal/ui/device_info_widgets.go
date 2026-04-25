@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"image/color"
 	"strings"
 
@@ -11,9 +10,83 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"mirroid/internal/adb"
 	"mirroid/internal/icons"
 )
+
+// styledText pairs a RichText widget with its first segment for in-place text updates.
+type styledText struct {
+	rt  *widget.RichText
+	seg *widget.TextSegment
+}
+
+func newStyledText(text string, style widget.RichTextStyle) *styledText {
+	seg := &widget.TextSegment{Text: text, Style: style}
+	return &styledText{rt: widget.NewRichText(seg), seg: seg}
+}
+
+func (s *styledText) Set(text string) {
+	if s.seg.Text == text {
+		return
+	}
+	s.seg.Text = text
+	s.rt.Refresh()
+}
+
+func styleHeading() widget.RichTextStyle {
+	return widget.RichTextStyle{
+		ColorName: theme.ColorNameForeground,
+		SizeName:  theme.SizeNameHeadingText,
+		TextStyle: fyne.TextStyle{Bold: true},
+	}
+}
+
+func styleKey() widget.RichTextStyle {
+	return widget.RichTextStyle{
+		Inline:    true,
+		ColorName: theme.ColorNameForeground,
+	}
+}
+
+func styleValue() widget.RichTextStyle {
+	return widget.RichTextStyle{
+		Inline:    true,
+		ColorName: theme.ColorNameForeground,
+		TextStyle: fyne.TextStyle{Bold: true},
+		Alignment: fyne.TextAlignTrailing,
+	}
+}
+
+func styleStat() widget.RichTextStyle {
+	return widget.RichTextStyle{
+		Alignment: fyne.TextAlignCenter,
+		ColorName: theme.ColorNameForeground,
+		SizeName:  theme.SizeNameSubHeadingText,
+		TextStyle: fyne.TextStyle{Bold: true},
+	}
+}
+
+func styleStatLabel() widget.RichTextStyle {
+	return widget.RichTextStyle{
+		Alignment: fyne.TextAlignCenter,
+		ColorName: theme.ColorNamePlaceHolder,
+		SizeName:  theme.SizeNameCaptionText,
+	}
+}
+
+// kvRow returns a card-style "key: value" row with the value as a styledText
+// so the value can be updated in place.
+func kvRow(key string) (*styledText, fyne.CanvasObject) {
+	keyText := newStyledText(key, styleKey())
+	val := newStyledText("", styleValue())
+	return val, container.NewBorder(nil, nil, keyText.rt, nil, val.rt)
+}
+
+// statBlock returns a centered value-over-label stat with the value as a styledText.
+func statBlock(label string) (*styledText, fyne.CanvasObject) {
+	val := newStyledText("", styleStat())
+	lbl := newStyledText(label, styleStatLabel())
+	return val, container.NewVBox(val.rt, lbl.rt)
+}
 
 func buildSectionLabel(icon fyne.Resource, title string) fyne.CanvasObject {
 	img := canvas.NewImageFromResource(icons.NewThemedIcon(icon))
@@ -35,36 +108,17 @@ func buildCard(content fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewStack(bg, container.NewPadded(content))
 }
 
-func buildCardKV(key, value string) fyne.CanvasObject {
-	keyWidget := widget.NewRichText(&widget.TextSegment{
-		Text: key,
-		Style: widget.RichTextStyle{
-			Inline:    true,
-			ColorName: theme.ColorNameForeground,
-		},
-	})
-	valueWidget := widget.NewRichText(&widget.TextSegment{
-		Text: value,
-		Style: widget.RichTextStyle{
-			Inline:    true,
-			ColorName: theme.ColorNameForeground,
-			TextStyle: fyne.TextStyle{Bold: true},
-			Alignment: fyne.TextAlignTrailing,
-		},
-	})
-	return container.NewBorder(nil, nil, keyWidget, nil, valueWidget)
-}
-
-func buildThinBar(pct float64) fyne.CanvasObject {
+func buildThinBar(pct float64) (*fyne.Container, *progressBarLayout) {
 	if pct < 0 {
 		pct = 0
 	}
 	if pct > 1 {
 		pct = 1
 	}
+	layout := &progressBarLayout{pct: pct}
 	bg := newThemedRect(theme.ColorNameSeparator, progressBarHeight/2)
 	fg := newThemedRect(theme.ColorNamePrimary, progressBarHeight/2)
-	return container.New(&progressBarLayout{pct: pct}, bg, fg)
+	return container.New(layout, bg, fg), layout
 }
 
 func buildStatusBadge(text string, pillColor color.Color) fyne.CanvasObject {
@@ -100,28 +154,9 @@ func batteryStatusColor(status string) color.Color {
 	}
 }
 
-func buildStatBlock(value, label string) fyne.CanvasObject {
-	valueText := widget.NewRichText(&widget.TextSegment{
-		Text: value,
-		Style: widget.RichTextStyle{
-			Alignment: fyne.TextAlignCenter,
-			ColorName: theme.ColorNameForeground,
-			SizeName:  theme.SizeNameSubHeadingText,
-			TextStyle: fyne.TextStyle{Bold: true},
-		},
-	})
-	labelText := widget.NewRichText(&widget.TextSegment{
-		Text: label,
-		Style: widget.RichTextStyle{
-			Alignment: fyne.TextAlignCenter,
-			ColorName: theme.ColorNamePlaceHolder,
-			SizeName:  theme.SizeNameCaptionText,
-		},
-	})
-	return container.NewVBox(valueText, labelText)
-}
-
-func buildHeroHeader(info adb.DeviceInfo) fyne.CanvasObject {
+// buildHeroHeader returns the connected-device hero block plus refs to the
+// dynamic name + address widgets so they can be updated in place on refresh.
+func buildHeroHeader() (fyne.CanvasObject, *widget.Label, *styledText) {
 	iconBg := canvas.NewRectangle(pillGreen)
 	iconBg.CornerRadius = cardRadius
 	phoneIcon := canvas.NewImageFromResource(icons.NewThemedIcon(icons.SmartphoneIcon))
@@ -130,29 +165,25 @@ func buildHeroHeader(info adb.DeviceInfo) fyne.CanvasObject {
 	iconBlock := container.NewStack(iconBg, container.NewCenter(phoneIcon))
 	iconWrapper := container.New(&fixedSizeLayout{width: heroBoxLarge, height: heroBoxLarge}, iconBlock)
 
-	name := fmt.Sprintf("%s %s", info.Manufacturer, info.Model)
-	nameLabel := widget.NewLabel(name)
+	nameLabel := widget.NewLabel("")
 	nameLabel.TextStyle = fyne.TextStyle{Bold: true}
 	nameLabel.Truncation = fyne.TextTruncateEllipsis
 
-	addressText := widget.NewRichText(&widget.TextSegment{
-		Text: info.Serial,
-		Style: widget.RichTextStyle{
-			Inline:    true,
-			ColorName: theme.ColorNamePlaceHolder,
-			SizeName:  theme.SizeNameCaptionText,
-		},
+	address := newStyledText("", widget.RichTextStyle{
+		Inline:    true,
+		ColorName: theme.ColorNamePlaceHolder,
+		SizeName:  theme.SizeNameCaptionText,
 	})
 
 	connectedBadge := buildStatusBadge("● Connected", pillGreen)
 
-	addressRow := container.NewHBox(addressText, connectedBadge)
+	addressRow := container.NewHBox(address.rt, connectedBadge)
 	rightSide := container.NewVBox(nameLabel, addressRow)
 
 	gap := canvas.NewRectangle(color.Transparent)
 	gap.SetMinSize(fyne.NewSize(theme.Padding(), 0))
 	iconWithGap := container.NewHBox(iconWrapper, gap)
-	return container.NewBorder(nil, nil, iconWithGap, nil, rightSide)
+	return container.NewBorder(nil, nil, iconWithGap, nil, rightSide), nameLabel, address
 }
 
 func buildSmallHero(name, badgeText string, accent color.Color) fyne.CanvasObject {

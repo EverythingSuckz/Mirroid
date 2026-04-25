@@ -59,7 +59,44 @@ type DeviceInfoPanel struct {
 	stopBtn       *widget.Button
 	mirrorStopBox *fyne.Container
 
+	info       *infoView          // built once per (re)connect, refreshes update in place
 	cancelLoad context.CancelFunc // mutated only on the fyne ui thread
+}
+
+// infoView holds refs to the dynamic widgets in the connected info layout so refreshes can update text/values in place instead of rebuilding the tree.
+type infoView struct {
+	serial string
+	root   fyne.CanvasObject
+
+	heroName    *widget.Label
+	heroAddress *styledText
+
+	batteryHeading *styledText
+	batteryBar     *fyne.Container
+	batteryLayout  *progressBarLayout
+	batteryPills   *fyne.Container
+
+	storageHeading *styledText
+	storageBar     *fyne.Container
+	storageLayout  *progressBarLayout
+	storageUsed    *styledText
+	storageFree    *styledText
+	storageTotal   *styledText
+
+	resolution *styledText
+	density    *styledText
+
+	cpuPlatform *styledText
+	cpuCores    *styledText
+	ram         *styledText
+
+	wifiSSID *styledText
+	ip       *styledText
+
+	androidVer *styledText
+	uptime     *styledText
+	appCount   *styledText
+	buildID    *styledText
 }
 
 func NewDeviceInfoPanel(app *App) *DeviceInfoPanel {
@@ -83,6 +120,7 @@ func (dip *DeviceInfoPanel) LoadDeviceInfo(serial string) {
 			dip.mirrorBtn = nil
 			dip.stopBtn = nil
 			dip.mirrorStopBox = nil
+			dip.info = nil
 			dip.app.setOptionsAreaVisible(true)
 			placeholder := widget.NewLabel("Select a device to view info")
 			placeholder.TextStyle = fyne.TextStyle{Italic: true}
@@ -99,6 +137,7 @@ func (dip *DeviceInfoPanel) LoadDeviceInfo(serial string) {
 			dip.mirrorBtn = nil
 			dip.stopBtn = nil
 			dip.mirrorStopBox = nil
+			dip.info = nil
 			dip.app.setOptionsAreaVisible(false)
 			dip.container.Objects = []fyne.CanvasObject{dip.buildDisconnectedView(serial)}
 			dip.container.Refresh()
@@ -130,14 +169,22 @@ func (dip *DeviceInfoPanel) LoadDeviceInfo(serial string) {
 				dip.activity.Stop()
 				switch {
 				case err == nil:
-					dip.container.Objects = []fyne.CanvasObject{dip.buildInfoView(serial, info)}
+					if dip.info != nil && dip.info.serial == serial {
+						dip.info.apply(info)
+						dip.refreshActionsLocked()
+					} else {
+						dip.info = dip.newInfoView(serial, info)
+						dip.container.Objects = []fyne.CanvasObject{dip.info.root}
+						dip.container.Refresh()
+					}
 				case errors.Is(err, context.Canceled):
 					return
 				default:
 					log.Printf("device_info: load %s: %v", serial, err)
+					dip.info = nil
 					dip.container.Objects = []fyne.CanvasObject{dip.buildErrorView(serial, err)}
+					dip.container.Refresh()
 				}
-				dip.container.Refresh()
 			})
 		}()
 	})
@@ -179,8 +226,12 @@ func (dip *DeviceInfoPanel) deviceDisplayName(serial string) string {
 	return serial
 }
 
-func (dip *DeviceInfoPanel) buildInfoView(serial string, info adb.DeviceInfo) fyne.CanvasObject {
-	heroHeader := buildHeroHeader(info)
+func (dip *DeviceInfoPanel) newInfoView(serial string, info adb.DeviceInfo) *infoView {
+	v := &infoView{serial: serial}
+
+	heroHeader, heroName, heroAddress := buildHeroHeader()
+	v.heroName = heroName
+	v.heroAddress = heroAddress
 
 	refreshBtn := ttwidget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() {
 		go dip.LoadDeviceInfo(serial)
@@ -193,88 +244,54 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info adb.DeviceInfo) fy
 		widget.NewSeparator(),
 	)
 
-	batteryPctText := widget.NewRichText(&widget.TextSegment{
-		Text: info.Battery,
-		Style: widget.RichTextStyle{
-			ColorName: theme.ColorNameForeground,
-			SizeName:  theme.SizeNameHeadingText,
-			TextStyle: fyne.TextStyle{Bold: true},
-		},
-	})
-	batteryBar := buildThinBar(info.BatteryPct)
-	batteryPills := container.NewHBox(
-		buildInfoPill(icons.ZapIcon, info.BatteryStatus, batteryStatusColor(info.BatteryStatus)),
-		buildInfoPill(icons.ThermometerIcon, info.BatteryTemp, pillTeal),
-		buildInfoPill(icons.HeartIcon, info.BatteryHealth, pillTeal),
-	)
-	batteryTopRow := container.NewBorder(nil, nil, batteryPctText, nil, batteryBar)
-	batteryCard := buildCard(container.NewVBox(batteryTopRow, batteryPills))
+	v.batteryHeading = newStyledText("", styleHeading())
+	v.batteryBar, v.batteryLayout = buildThinBar(0)
+	v.batteryPills = container.NewHBox()
+	pillsScroll := container.NewHScroll(v.batteryPills)
+	pillsScroll.Direction = container.ScrollHorizontalOnly
+	batteryTopRow := container.NewBorder(nil, nil, v.batteryHeading.rt, nil, v.batteryBar)
+	batteryCard := buildCard(container.NewVBox(batteryTopRow, pillsScroll))
 	batterySection := container.NewVBox(buildSectionLabel(icons.BatteryMediumIcon, "Battery"), batteryCard)
 
-	storagePctDisplay := fmt.Sprintf("%.0f%%", info.StoragePct*100)
-	storagePctText := widget.NewRichText(&widget.TextSegment{
-		Text: storagePctDisplay,
-		Style: widget.RichTextStyle{
-			ColorName: theme.ColorNameForeground,
-			SizeName:  theme.SizeNameHeadingText,
-			TextStyle: fyne.TextStyle{Bold: true},
-		},
-	})
-	storageBar := buildThinBar(info.StoragePct)
-	storageTopRow := container.NewBorder(nil, nil, storagePctText, nil, storageBar)
-	storageKV := container.NewVBox(
-		buildCardKV("Used", info.StorageUsed),
-		buildCardKV("Free", info.StorageFree),
-		buildCardKV("Total", info.StorageTotal),
-	)
-	storageCard := buildCard(container.NewVBox(storageTopRow, storageKV))
+	v.storageHeading = newStyledText("", styleHeading())
+	v.storageBar, v.storageLayout = buildThinBar(0)
+	var usedRow, freeRow, totalRow fyne.CanvasObject
+	v.storageUsed, usedRow = kvRow("Used")
+	v.storageFree, freeRow = kvRow("Free")
+	v.storageTotal, totalRow = kvRow("Total")
+	storageTopRow := container.NewBorder(nil, nil, v.storageHeading.rt, nil, v.storageBar)
+	storageCard := buildCard(container.NewVBox(storageTopRow, usedRow, freeRow, totalRow))
 	storageSection := container.NewVBox(buildSectionLabel(icons.HardDriveIcon, "Storage"), storageCard)
 
-	displayGrid := container.NewGridWithColumns(2,
-		buildStatBlock(info.Resolution, "Resolution"),
-		buildStatBlock(info.DensityDisplay, "Density"),
-	)
-	displayCard := buildCard(displayGrid)
+	var resolutionBlock, densityBlock fyne.CanvasObject
+	v.resolution, resolutionBlock = statBlock("Resolution")
+	v.density, densityBlock = statBlock("Density")
+	displayCard := buildCard(container.NewGridWithColumns(2, resolutionBlock, densityBlock))
 	displaySection := container.NewVBox(buildSectionLabel(icons.MonitorIcon, "Display"), displayCard)
 
-	hardwareCard := buildCard(container.NewVBox(
-		buildCardKV("CPU", info.CPUPlatform),
-		buildCardKV("Cores", info.CPUCores),
-		buildCardKV("RAM", info.RAM),
-	))
+	var cpuRow, coresRow, ramRow fyne.CanvasObject
+	v.cpuPlatform, cpuRow = kvRow("CPU")
+	v.cpuCores, coresRow = kvRow("Cores")
+	v.ram, ramRow = kvRow("RAM")
+	hardwareCard := buildCard(container.NewVBox(cpuRow, coresRow, ramRow))
 	hardwareSection := container.NewVBox(buildSectionLabel(icons.CPUIcon, "Hardware"), hardwareCard)
 
 	wifiDot := canvas.NewText("●", pillGreen)
 	wifiDot.TextSize = wifiDotSize
-	wifiLabel := widget.NewRichText(&widget.TextSegment{
-		Text: "Wi-Fi",
-		Style: widget.RichTextStyle{
-			Inline:    true,
-			ColorName: theme.ColorNameForeground,
-		},
-	})
-	wifiValue := widget.NewRichText(&widget.TextSegment{
-		Text: info.WifiSSID,
-		Style: widget.RichTextStyle{
-			Inline:    true,
-			ColorName: theme.ColorNameForeground,
-			Alignment: fyne.TextAlignTrailing,
-		},
-	})
-	wifiRow := container.NewBorder(nil, nil, container.NewHBox(wifiDot, wifiLabel), nil, wifiValue)
-	networkCard := buildCard(container.NewVBox(
-		wifiRow,
-		buildCardKV("IP Address", info.IPAddress),
-	))
+	wifiLabel := newStyledText("Wi-Fi", styleKey())
+	v.wifiSSID = newStyledText("", styleValue())
+	wifiRow := container.NewBorder(nil, nil, container.NewHBox(wifiDot, wifiLabel.rt), nil, v.wifiSSID.rt)
+	var ipAddrRow fyne.CanvasObject
+	v.ip, ipAddrRow = kvRow("IP Address")
+	networkCard := buildCard(container.NewVBox(wifiRow, ipAddrRow))
 	networkSection := container.NewVBox(buildSectionLabel(icons.WifiIcon, "Network"), networkCard)
 
-	systemGrid := container.NewGridWithColumns(2,
-		buildStatBlock(info.AndroidDisplay, "Android"),
-		buildStatBlock(info.Uptime, "Uptime"),
-		buildStatBlock(info.AppCount, "Apps Installed"),
-		buildStatBlock(info.BuildID, "Build"),
-	)
-	systemCard := buildCard(systemGrid)
+	var androidBlock, uptimeBlock, appsBlock, buildBlock fyne.CanvasObject
+	v.androidVer, androidBlock = statBlock("Android")
+	v.uptime, uptimeBlock = statBlock("Uptime")
+	v.appCount, appsBlock = statBlock("Apps Installed")
+	v.buildID, buildBlock = statBlock("Build")
+	systemCard := buildCard(container.NewGridWithColumns(2, androidBlock, uptimeBlock, appsBlock, buildBlock))
 	systemSection := container.NewVBox(buildSectionLabel(icons.SettingsIcon, "System"), systemCard)
 
 	sections := container.NewVBox(
@@ -321,6 +338,7 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info adb.DeviceInfo) fy
 	}
 	dip.mirrorStopBox = container.NewStack(dip.mirrorBtn, dip.stopBtn)
 
+	deviceID := info.DeviceID // captured for the disconnect closure (stable per serial)
 	disconnectBtn := widget.NewButtonWithIcon("Disconnect", theme.LogoutIcon(), func() {
 		go func() {
 			dip.app.runner.StopFor(serial)
@@ -328,8 +346,8 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info adb.DeviceInfo) fy
 				dip.app.logsPanel.Log("[ERROR]Disconnect: " + err.Error())
 			} else {
 				dip.app.logsPanel.Log("[OK]Disconnected " + serial)
-				dip.app.ignoreDevice(serial, info.DeviceID)
-				dip.app.disconnectAliases(map[string]bool{info.DeviceID: true})
+				dip.app.ignoreDevice(serial, deviceID)
+				dip.app.disconnectAliases(map[string]bool{deviceID: true})
 			}
 			dip.app.devicePanel.refreshDevices() // triggers LoadDeviceInfo via the panel's refresh path
 		}()
@@ -352,7 +370,51 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info adb.DeviceInfo) fy
 	secondaryActions := container.NewGridWithColumns(2, screenshotBtn, openShellBtn)
 	actions := container.NewVBox(widget.NewSeparator(), primaryActions, secondaryActions)
 
-	return container.NewBorder(stickyTop, actions, nil, nil, scrollContent)
+	v.root = container.NewBorder(stickyTop, actions, nil, nil, scrollContent)
+	v.apply(info)
+	return v
+}
+
+func (v *infoView) apply(info adb.DeviceInfo) {
+	v.heroName.SetText(fmt.Sprintf("%s %s", info.Manufacturer, info.Model))
+	v.heroAddress.Set(info.Serial)
+
+	batteryDisplay := "-"
+	if info.BatteryPct > 0 {
+		batteryDisplay = fmt.Sprintf("%d%%", int(info.BatteryPct*100))
+	}
+	v.batteryHeading.Set(batteryDisplay)
+	v.batteryLayout.pct = info.BatteryPct
+	v.batteryBar.Refresh()
+
+	v.batteryPills.Objects = []fyne.CanvasObject{
+		buildInfoPill(icons.ZapIcon, info.BatteryStatus, batteryStatusColor(info.BatteryStatus)),
+		buildInfoPill(icons.ThermometerIcon, info.BatteryTemp, pillTeal),
+		buildInfoPill(icons.HeartIcon, info.BatteryHealth, pillTeal),
+	}
+	v.batteryPills.Refresh()
+
+	v.storageHeading.Set(fmt.Sprintf("%.0f%%", info.StoragePct*100))
+	v.storageLayout.pct = info.StoragePct
+	v.storageBar.Refresh()
+	v.storageUsed.Set(info.StorageUsed)
+	v.storageFree.Set(info.StorageFree)
+	v.storageTotal.Set(info.StorageTotal)
+
+	v.resolution.Set(info.Resolution)
+	v.density.Set(info.DensityDisplay)
+
+	v.cpuPlatform.Set(info.CPUPlatform)
+	v.cpuCores.Set(info.CPUCores)
+	v.ram.Set(info.RAM)
+
+	v.wifiSSID.Set(info.WifiSSID)
+	v.ip.Set(info.IPAddress)
+
+	v.androidVer.Set(info.AndroidDisplay)
+	v.uptime.Set(info.Uptime)
+	v.appCount.Set(info.AppCount)
+	v.buildID.Set(info.BuildID)
 }
 
 func (dip *DeviceInfoPanel) buildDisconnectedView(serial string) fyne.CanvasObject {
