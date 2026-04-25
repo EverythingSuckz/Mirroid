@@ -33,42 +33,76 @@ func parseDumpsysBattery(output string) (level int, status, temp, health string)
 	return
 }
 
-func parseBatteryStatus(code string) string {
-	switch code {
-	case "1":
-		return "Unknown"
-	case "2":
+// BatteryStatus mirrors android.os.BatteryManager.BATTERY_STATUS_*.
+type BatteryStatus int
+
+const (
+	BatteryStatusUnknown     BatteryStatus = 1
+	BatteryStatusCharging    BatteryStatus = 2
+	BatteryStatusDischarging BatteryStatus = 3
+	BatteryStatusNotCharging BatteryStatus = 4
+	BatteryStatusFull        BatteryStatus = 5
+)
+
+func (s BatteryStatus) String() string {
+	switch s {
+	case BatteryStatusCharging:
 		return "Charging"
-	case "3":
+	case BatteryStatusDischarging:
 		return "Discharging"
-	case "4":
+	case BatteryStatusNotCharging:
 		return "Not charging"
-	case "5":
+	case BatteryStatusFull:
 		return "Full"
 	default:
 		return "Unknown"
 	}
 }
 
-func parseBatteryHealth(code string) string {
-	switch code {
-	case "1":
-		return "Unknown"
-	case "2":
+// BatteryHealth mirrors android.os.BatteryManager.BATTERY_HEALTH_*.
+type BatteryHealth int
+
+const (
+	BatteryHealthUnknown     BatteryHealth = 1
+	BatteryHealthGood        BatteryHealth = 2
+	BatteryHealthOverheat    BatteryHealth = 3
+	BatteryHealthDead        BatteryHealth = 4
+	BatteryHealthOverVoltage BatteryHealth = 5
+	BatteryHealthFailure     BatteryHealth = 6
+	BatteryHealthCold        BatteryHealth = 7
+)
+
+func (h BatteryHealth) String() string {
+	switch h {
+	case BatteryHealthGood:
 		return "Good"
-	case "3":
+	case BatteryHealthOverheat:
 		return "Overheat"
-	case "4":
+	case BatteryHealthDead:
 		return "Dead"
-	case "5":
+	case BatteryHealthOverVoltage:
 		return "Over voltage"
-	case "6":
+	case BatteryHealthFailure:
 		return "Failure"
-	case "7":
+	case BatteryHealthCold:
 		return "Cold"
 	default:
 		return "Unknown"
 	}
+}
+
+func parseBatteryStatus(code string) BatteryStatus {
+	if n, err := strconv.Atoi(strings.TrimSpace(code)); err == nil {
+		return BatteryStatus(n)
+	}
+	return BatteryStatusUnknown
+}
+
+func parseBatteryHealth(code string) BatteryHealth {
+	if n, err := strconv.Atoi(strings.TrimSpace(code)); err == nil {
+		return BatteryHealth(n)
+	}
+	return BatteryHealthUnknown
 }
 
 func parseBatteryTemp(raw string) string {
@@ -172,7 +206,8 @@ func parseMemTotal(memInfoOutput string) string {
 }
 
 // case-sensitive "processor" prefix + numeric value excludes the ARM header line "Processor : AArch64 ...".
-func parseCPUCores(cpuInfoOutput string) string {
+// returns -1 when no per-core entries are found.
+func parseCPUCores(cpuInfoOutput string) int {
 	count := 0
 	for _, line := range strings.Split(cpuInfoOutput, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -189,9 +224,9 @@ func parseCPUCores(cpuInfoOutput string) string {
 		count++
 	}
 	if count == 0 {
-		return "-"
+		return -1
 	}
-	return strconv.Itoa(count)
+	return count
 }
 
 // returns the index of the value after "SSID:" in s, rejecting matches inside "BSSID:". -1 if not found.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image/color"
 	"log"
+	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -427,9 +428,9 @@ func (v *infoView) apply(info adb.DeviceInfo) {
 	v.batteryBar.Refresh()
 
 	v.batteryPills.Objects = []fyne.CanvasObject{
-		buildInfoPill(icons.ZapIcon, info.BatteryStatus, batteryStatusColor(info.BatteryStatus)),
+		buildInfoPill(icons.ZapIcon, info.BatteryStatus.String(), batteryStatusColor(info.BatteryStatus)),
 		buildInfoPill(icons.ThermometerIcon, info.BatteryTemp, pillTeal),
-		buildInfoPill(icons.HeartIcon, info.BatteryHealth, pillTeal),
+		buildInfoPill(icons.HeartIcon, info.BatteryHealth.String(), pillTeal),
 	}
 	v.batteryPills.Refresh()
 
@@ -444,7 +445,7 @@ func (v *infoView) apply(info adb.DeviceInfo) {
 	v.density.Set(info.DensityDisplay)
 
 	v.cpuPlatform.Set(info.CPUPlatform)
-	v.cpuCores.Set(info.CPUCores)
+	v.cpuCores.Set(formatCount(info.CPUCores))
 	v.ram.Set(info.RAM)
 
 	v.wifiSSID.Set(info.WifiSSID)
@@ -452,8 +453,16 @@ func (v *infoView) apply(info adb.DeviceInfo) {
 
 	v.androidVer.Set(info.AndroidDisplay)
 	v.uptime.Set(info.Uptime)
-	v.appCount.Set(info.AppCount)
+	v.appCount.Set(formatCount(info.AppCount))
 	v.buildID.Set(info.BuildID)
+}
+
+// formatCount renders a possibly-unknown count: "-" for negative, decimal otherwise.
+func formatCount(n int) string {
+	if n < 0 {
+		return "-"
+	}
+	return strconv.Itoa(n)
 }
 
 func (dip *DeviceInfoPanel) buildDisconnectedView(serial string) fyne.CanvasObject {
