@@ -5,27 +5,6 @@ import (
 	"testing"
 )
 
-func TestParseBatteryPct(t *testing.T) {
-	tests := []struct {
-		input string
-		want  float64
-	}{
-		{"85%", 0.85},
-		{"0%", 0.0},
-		{"100%", 1.0},
-		{"-", 0.0},
-		{"", 0.0},
-		{"abc%", 0.0},
-		{"150%", 1.0},
-	}
-	for _, tt := range tests {
-		got := parseBatteryPct(tt.input)
-		if math.Abs(got-tt.want) > 0.001 {
-			t.Errorf("parseBatteryPct(%q) = %f, want %f", tt.input, got, tt.want)
-		}
-	}
-}
-
 func TestParseBatteryStatus(t *testing.T) {
 	tests := []struct {
 		input string
@@ -97,7 +76,7 @@ func TestParseUptime(t *testing.T) {
 		{3600, "1h 0m"},
 		{45, "<1m"},
 		{0, "<1m"},
-		{-1, "-"},
+		{-1, "<1m"},
 		{86400, "1d 0h 0m"},
 		{3661, "1h 1m"},
 		{60, "1m"},

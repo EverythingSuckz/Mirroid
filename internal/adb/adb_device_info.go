@@ -26,20 +26,16 @@ type DeviceInfo struct {
 	Serial         string
 	DeviceID       string
 	Resolution     string
-	Density        string
-	Battery        string
 
 	BatteryPct    float64 // [0,1], zero when unknown
-
 	BatteryStatus string
 	BatteryTemp   string
 	BatteryHealth string
 
-	StorageTotal string
-	StorageUsed  string
-	StorageFree  string
+	StorageTotal   string
+	StorageUsed    string
+	StorageFree    string
 	StoragePct     float64 // used fraction [0,1], zero when unknown
-
 	StorageDisplay string
 
 	RAM         string
@@ -160,7 +156,7 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 		return DeviceInfo{Serial: serial}, fmt.Errorf("getprop failed (device offline?): %w", propsErr)
 	}
 
-	battery := fieldUnknown
+	batteryLevel := -1
 	var batteryStatus, batteryTemp, batteryHealth string
 	for _, line := range strings.Split(string(battOut), "\n") {
 		key, val, ok := strings.Cut(strings.TrimSpace(line), ":")
@@ -170,13 +166,22 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 		val = strings.TrimSpace(val)
 		switch key {
 		case "level":
-			battery = val + "%"
+			if n, err := strconv.Atoi(val); err == nil && n >= 0 {
+				batteryLevel = n
+			}
 		case "status":
 			batteryStatus = val
 		case "temperature":
 			batteryTemp = val
 		case "health":
 			batteryHealth = val
+		}
+	}
+	batteryPct := 0.0
+	if batteryLevel >= 0 {
+		batteryPct = float64(batteryLevel) / 100.0
+		if batteryPct > 1.0 {
+			batteryPct = 1.0
 		}
 	}
 
@@ -213,7 +218,6 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 
 	androidVersion := prop("ro.build.version.release")
 	sdk := prop("ro.build.version.sdk")
-	density := prop("ro.sf.lcd_density")
 
 	storageDisplay := fieldUnknown
 	if storageUsed != fieldUnknown && storageTotal != fieldUnknown {
@@ -225,9 +229,9 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 		androidDisplay = androidVersion + " (SDK " + sdk + ")"
 	}
 
-	densityDisplay := density
-	if density != fieldUnknown {
-		densityDisplay = density + " dpi"
+	densityDisplay := prop("ro.sf.lcd_density")
+	if densityDisplay != fieldUnknown {
+		densityDisplay += " dpi"
 	}
 
 	ipAddress := parseIPAddress(string(ipOut))
@@ -246,9 +250,7 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 		Serial:         serial,
 		DeviceID:       prop("ro.serialno"),
 		Resolution:     parseResolution(string(resOut)),
-		Density:        density,
-		Battery:        battery,
-		BatteryPct:     parseBatteryPct(battery),
+		BatteryPct:     batteryPct,
 		BatteryStatus:  parseBatteryStatus(batteryStatus),
 		BatteryTemp:    parseBatteryTemp(batteryTemp),
 		BatteryHealth:  parseBatteryHealth(batteryHealth),

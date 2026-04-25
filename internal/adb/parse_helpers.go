@@ -45,19 +45,6 @@ func parseBatteryHealth(code string) string {
 	}
 }
 
-func parseBatteryPct(battery string) float64 {
-	s := strings.TrimSuffix(strings.TrimSpace(battery), "%")
-	v, err := strconv.ParseFloat(s, 64)
-	if err != nil || v < 0 {
-		return 0.0
-	}
-	pct := v / 100.0
-	if pct > 1.0 {
-		pct = 1.0
-	}
-	return pct
-}
-
 func parseBatteryTemp(raw string) string {
 	val, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil {
@@ -69,7 +56,7 @@ func parseBatteryTemp(raw string) string {
 
 func parseUptime(seconds float64) string {
 	if seconds < 0 {
-		return "-"
+		seconds = 0
 	}
 	total := int(math.Floor(seconds))
 	if total < 60 {
