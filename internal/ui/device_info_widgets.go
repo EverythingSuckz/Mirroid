@@ -62,10 +62,8 @@ func buildThinBar(pct float64) fyne.CanvasObject {
 	if pct > 1 {
 		pct = 1
 	}
-	bg := canvas.NewRectangle(theme.Color(theme.ColorNameInputBorder))
-	bg.CornerRadius = progressBarHeight / 2
-	fg := canvas.NewRectangle(theme.Color(theme.ColorNamePrimary))
-	fg.CornerRadius = progressBarHeight / 2
+	bg := newThemedRect(theme.ColorNameSeparator, progressBarHeight/2)
+	fg := newThemedRect(theme.ColorNamePrimary, progressBarHeight/2)
 	return container.New(&progressBarLayout{pct: pct}, bg, fg)
 }
 
