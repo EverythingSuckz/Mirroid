@@ -118,13 +118,18 @@ func TestParseStorageLine(t *testing.T) {
 		wantPctApprox       float64
 		wantPctApproxMargin float64
 	}{
+		// df -k output: 62914556 1k-blocks ≈ 60.0G
 		{
-			"/dev/block/dm-48    57G    37G    20G  66% /data",
-			"57G", "37G", "20G", 0.66, 0.01,
+			"/dev/block/dm-48    62914556    39061408    23853148  62% /data",
+			"60.0G", "37.3G", "22.7G", 0.62, 0.01,
 		},
 		{"", "-", "-", "-", 0.0, 0.0},
 		{"garbage", "-", "-", "-", 0.0, 0.0},
 		{"short line", "-", "-", "-", 0.0, 0.0},
+		// non-numeric size column rejects (would otherwise pass through as bogus strings)
+		{"/dev/block/x abc def ghi 50% /data", "-", "-", "-", 0.0, 0.0},
+		// zero total rejects
+		{"/dev/block/x 0 0 0 0% /data", "-", "-", "-", 0.0, 0.0},
 	}
 	for _, tt := range tests {
 		total, used, free, pct := parseStorageLine(tt.input)
@@ -148,6 +153,10 @@ func TestParseMemTotal(t *testing.T) {
 		{"MemTotal:", "-"},
 		{"SomethingElse: 12345 kB", "-"},
 		{"MemTotal:        notanumber kB", "-"},
+		// missing kB unit must reject (would otherwise be silently 1024x wrong)
+		{"MemTotal:        3905424", "-"},
+		// MB unit must reject
+		{"MemTotal:        3905424 MB", "-"},
 	}
 	for _, tt := range tests {
 		if got := parseMemTotal(tt.input); got != tt.want {
@@ -197,6 +206,11 @@ func TestParseWifiSSID(t *testing.T) {
 		{`BSSID: aa:bb:cc:dd:ee:ff SSID: "RealNet"`, "RealNet"},
 		// BSSID line followed by SSID line — must pick SSID line.
 		{"BSSID: aa:bb:cc:dd:ee:ff\nSSID: \"NextNet\"", "NextNet"},
+		// mWifiInfo wins over an earlier configured network entry.
+		{
+			"Configured networks:\n  SSID: \"OldSaved\"\nmWifiInfo SSID: \"Active\", BSSID: aa:bb",
+			"Active",
+		},
 	}
 	for _, tt := range tests {
 		if got := parseWifiSSID(tt.input); got != tt.want {
@@ -259,14 +273,23 @@ func TestParseResolution(t *testing.T) {
 
 func TestParseIPAddress(t *testing.T) {
 	tests := []struct {
+		name  string
 		input string
 		want  string
 	}{
-		{"3: wlan0: ...\n    inet 192.168.2.48/24 brd ...", "192.168.2.48"},
-		{"    inet 10.0.0.1/8 scope global", "10.0.0.1"},
-		{"", "-"},
-		{"no inet line", "-"},
-		{"inet6 ::1/128 scope host", "-"},
+		{"multi-line wlan0", "3: wlan0: ...\n    inet 192.168.2.48/24 brd ... wlan0", "192.168.2.48"},
+		{"oneline wlan0", "3: wlan0    inet 192.168.2.48/24 brd 192.168.2.255 scope global wlan0", "192.168.2.48"},
+		{"empty", "", "-"},
+		{"no inet", "no inet line", "-"},
+		{"v6 only", "inet6 ::1/128 scope host", "-"},
+		{"loopback skipped", "1: lo    inet 127.0.0.1/8 scope host lo", "-"},
+		{"link-local skipped", "5: wlan0    inet 169.254.1.2/16 scope link wlan0", "-"},
+		// wlan0 preferred over wlan1
+		{
+			"wlan0 over wlan1",
+			"3: wlan1    inet 10.0.0.2/24 scope global wlan1\n4: wlan0    inet 10.0.0.1/24 scope global wlan0",
+			"10.0.0.1",
+		},
 	}
 	for _, tt := range tests {
 		if got := parseIPAddress(tt.input); got != tt.want {

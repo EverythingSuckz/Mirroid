@@ -94,20 +94,25 @@ func parseUptime(seconds float64) string {
 	return strings.Join(parts, " ")
 }
 
+// parses a `df -k` data line: filesystem 1K-blocks used available use% mountpoint.
+// values are 1k-blocks; converted to human-readable strings here.
 func parseStorageLine(line string) (total, used, free string, pct float64) {
 	fields := strings.Fields(strings.TrimSpace(line))
 	if len(fields) < 5 {
 		return "-", "-", "-", 0.0
 	}
 
-	total = fields[1]
-	used = fields[2]
-	free = fields[3]
+	totalKB, err1 := strconv.ParseInt(fields[1], 10, 64)
+	usedKB, err2 := strconv.ParseInt(fields[2], 10, 64)
+	freeKB, err3 := strconv.ParseInt(fields[3], 10, 64)
+	if err1 != nil || err2 != nil || err3 != nil || totalKB <= 0 {
+		return "-", "-", "-", 0.0
+	}
 
 	pctStr := strings.TrimSuffix(fields[4], "%")
 	pctVal, err := strconv.ParseFloat(pctStr, 64)
 	if err != nil {
-		return total, used, free, 0.0
+		return "-", "-", "-", 0.0
 	}
 
 	pct = pctVal / 100.0
@@ -117,7 +122,20 @@ func parseStorageLine(line string) (total, used, free string, pct float64) {
 	if pct > 1.0 {
 		pct = 1.0
 	}
-	return total, used, free, pct
+	return formatKB(totalKB), formatKB(usedKB), formatKB(freeKB), pct
+}
+
+func formatKB(kb int64) string {
+	switch {
+	case kb >= 1<<30:
+		return fmt.Sprintf("%.1fT", float64(kb)/(1<<30))
+	case kb >= 1<<20:
+		return fmt.Sprintf("%.1fG", float64(kb)/(1<<20))
+	case kb >= 1<<10:
+		return fmt.Sprintf("%.0fM", float64(kb)/(1<<10))
+	default:
+		return fmt.Sprintf("%dK", kb)
+	}
 }
 
 func parseMemTotal(memInfoOutput string) string {
@@ -127,7 +145,7 @@ func parseMemTotal(memInfoOutput string) string {
 			continue
 		}
 		parts := strings.Fields(line)
-		if len(parts) < 2 {
+		if len(parts) < 3 || parts[2] != "kB" {
 			return "-"
 		}
 		kb, err := strconv.ParseFloat(parts[1], 64)
@@ -140,11 +158,7 @@ func parseMemTotal(memInfoOutput string) string {
 	return "-"
 }
 
-// parseCPUCores counts per-core entries in /proc/cpuinfo. Lines look like
-// "processor\t: 0". On ARM the file also contains a header line
-// "Processor\t: AArch64 Processor rev 4" — the leading capital distinguishes
-// the header from the per-core entries, so a case-sensitive prefix match plus
-// a numeric value check yields the correct count.
+// case-sensitive "processor" prefix + numeric value excludes the ARM header line "Processor : AArch64 ...".
 func parseCPUCores(cpuInfoOutput string) string {
 	count := 0
 	for _, line := range strings.Split(cpuInfoOutput, "\n") {
@@ -167,9 +181,7 @@ func parseCPUCores(cpuInfoOutput string) string {
 	return strconv.Itoa(count)
 }
 
-// findSSIDToken locates the start of an "SSID:" token in s without matching
-// the trailing "SSID:" inside "BSSID:". Returns the index of the value
-// (i.e. the character after "SSID: ") or -1 if not found.
+// returns the index of the value after "SSID:" in s, rejecting matches inside "BSSID:". -1 if not found.
 func findSSIDToken(s string) int {
 	rest := s
 	offset := 0
@@ -179,7 +191,6 @@ func findSSIDToken(s string) int {
 			return -1
 		}
 		absolute := offset + i
-		// Reject matches preceded by a letter/digit (e.g. the "B" in "BSSID:").
 		if absolute > 0 {
 			prev := s[absolute-1]
 			if (prev >= 'a' && prev <= 'z') || (prev >= 'A' && prev <= 'Z') || (prev >= '0' && prev <= '9') {
@@ -189,7 +200,6 @@ func findSSIDToken(s string) int {
 			}
 		}
 		valStart := absolute + len("SSID:")
-		// Skip a single space if present (matches both "SSID: x" and "SSID:x").
 		if valStart < len(s) && s[valStart] == ' ' {
 			valStart++
 		}
@@ -198,45 +208,56 @@ func findSSIDToken(s string) int {
 }
 
 func parseWifiSSID(dumpsysOutput string) string {
-	for _, line := range strings.Split(dumpsysOutput, "\n") {
-		trimmed := strings.TrimSpace(line)
-		valStart := findSSIDToken(trimmed)
-		if valStart < 0 {
+	lines := strings.Split(dumpsysOutput, "\n")
+	// prefer ssid from the active connection (mWifiInfo) when present
+	for _, line := range lines {
+		if !strings.Contains(line, "mWifiInfo") {
 			continue
 		}
-		after := trimmed[valStart:]
-
-		// Handle SSID: "name" (with quotes)
-		if strings.HasPrefix(after, "\"") {
-			end := strings.Index(after[1:], "\"")
-			if end < 0 {
-				continue
-			}
-			ssid := after[1 : end+1]
-			if ssid == "" || ssid == "<unknown ssid>" {
-				return "-"
-			}
-			return ssid
+		if v := extractSSID(strings.TrimSpace(line)); v != "" {
+			return v
 		}
-
-		// Handle SSID: name (no quotes) — take until comma or end of line
-		val := after
-		if ci := strings.Index(val, ","); ci >= 0 {
-			val = val[:ci]
+	}
+	for _, line := range lines {
+		if v := extractSSID(strings.TrimSpace(line)); v != "" {
+			return v
 		}
-		val = strings.TrimSpace(val)
-		if val == "" || val == "<unknown ssid>" {
-			return "-"
-		}
-		return val
 	}
 	return "-"
 }
 
-// parseGetProps parses the output of `adb shell getprop` (no args). Each
-// line has the form `[key]: [value]`; multi-line values (extremely rare for
-// the keys we care about) are not handled — only the first line of such a
-// value is captured.
+// extracts the ssid from a single line; "" means no usable ssid found.
+func extractSSID(trimmed string) string {
+	valStart := findSSIDToken(trimmed)
+	if valStart < 0 {
+		return ""
+	}
+	after := trimmed[valStart:]
+
+	if strings.HasPrefix(after, "\"") {
+		end := strings.Index(after[1:], "\"")
+		if end < 0 {
+			return ""
+		}
+		ssid := after[1 : end+1]
+		if ssid == "" || ssid == "<unknown ssid>" {
+			return "-"
+		}
+		return ssid
+	}
+
+	val := after
+	if ci := strings.Index(val, ","); ci >= 0 {
+		val = val[:ci]
+	}
+	val = strings.TrimSpace(val)
+	if val == "" || val == "<unknown ssid>" {
+		return "-"
+	}
+	return val
+}
+
+// parses lines of the form `[key]: [value]` from `adb shell getprop`.
 func parseGetProps(output string) map[string]string {
 	props := make(map[string]string)
 	for _, line := range strings.Split(output, "\n") {
@@ -244,7 +265,6 @@ func parseGetProps(output string) map[string]string {
 		if line == "" {
 			continue
 		}
-		// Expected: [key]: [value]
 		if !strings.HasPrefix(line, "[") {
 			continue
 		}
@@ -268,13 +288,7 @@ func parseGetProps(output string) map[string]string {
 	return props
 }
 
-// parseResolution extracts the device resolution from `wm size` output.
-// When an override is set, the output is two lines:
-//
-//	Physical size: 1440x3120
-//	Override size: 1080x1920
-//
-// The override is preferred when present.
+// prefers "Override size:" over "Physical size:" when both are present.
 func parseResolution(wmSizeOutput string) string {
 	var physical, override string
 	for _, line := range strings.Split(wmSizeOutput, "\n") {
@@ -303,21 +317,50 @@ func parseResolution(wmSizeOutput string) string {
 	return "-"
 }
 
+// handles both `ip addr show <iface>` (multi-line) and `ip -o addr show` (one line per addr).
+// prefers wlan0 > wlan1 > any other wlanN; ignores loopback and link-local.
 func parseIPAddress(ipAddrOutput string) string {
+	var wlan0, wlan1, otherWlan string
 	for _, line := range strings.Split(ipAddrOutput, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "inet ") {
+		// look for "inet 1.2.3.4/24" anywhere in the line
+		i := strings.Index(trimmed, "inet ")
+		if i < 0 {
 			continue
 		}
-		parts := strings.Fields(trimmed)
-		if len(parts) < 2 {
+		rest := strings.Fields(trimmed[i+len("inet "):])
+		if len(rest) == 0 {
 			continue
 		}
-		addr := parts[1]
+		addr := rest[0]
 		if slashIdx := strings.Index(addr, "/"); slashIdx >= 0 {
 			addr = addr[:slashIdx]
 		}
-		return addr
+		if addr == "" || strings.HasPrefix(addr, "127.") || strings.HasPrefix(addr, "169.254.") {
+			continue
+		}
+		switch {
+		case strings.Contains(trimmed, "wlan0"):
+			if wlan0 == "" {
+				wlan0 = addr
+			}
+		case strings.Contains(trimmed, "wlan1"):
+			if wlan1 == "" {
+				wlan1 = addr
+			}
+		case strings.Contains(trimmed, "wlan"):
+			if otherWlan == "" {
+				otherWlan = addr
+			}
+		}
+	}
+	switch {
+	case wlan0 != "":
+		return wlan0
+	case wlan1 != "":
+		return wlan1
+	case otherWlan != "":
+		return otherWlan
 	}
 	return "-"
 }

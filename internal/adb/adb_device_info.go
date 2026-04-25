@@ -14,12 +14,9 @@ import (
 	"mirroid/internal/platform"
 )
 
-// fieldUnknown is the sentinel string used in DeviceInfo display fields when
-// a value could not be obtained.
 const fieldUnknown = "-"
 
-// DeviceInfo holds detailed properties fetched from a connected device.
-// Display fields use fieldUnknown ("-") when a value is unavailable.
+// DeviceInfo holds detailed properties for a connected device. Display fields use "-" when unavailable.
 type DeviceInfo struct {
 	Model          string
 	Manufacturer   string
@@ -32,8 +29,8 @@ type DeviceInfo struct {
 	Density        string
 	Battery        string
 
-	// BatteryPct is the battery level in the range [0,1]. Zero when unknown.
-	BatteryPct    float64
+	BatteryPct    float64 // [0,1], zero when unknown
+
 	BatteryStatus string
 	BatteryTemp   string
 	BatteryHealth string
@@ -41,8 +38,8 @@ type DeviceInfo struct {
 	StorageTotal string
 	StorageUsed  string
 	StorageFree  string
-	// StoragePct is used storage as a fraction in [0,1]. Zero when unknown.
-	StoragePct     float64
+	StoragePct     float64 // used fraction [0,1], zero when unknown
+
 	StorageDisplay string
 
 	RAM         string
@@ -58,9 +55,6 @@ type DeviceInfo struct {
 	DensityDisplay string
 }
 
-// shellOutput runs `adb -s <serial> shell <args...>` under ctx and returns
-// the captured stdout. Stderr is silently dropped to avoid noisy output from
-// commands that exit non-zero on some devices.
 func (c *Client) shellOutput(ctx context.Context, serial string, args ...string) ([]byte, error) {
 	full := append([]string{"-s", serial, "shell"}, args...)
 	cmd := exec.CommandContext(ctx, c.adbPath, full...)
@@ -68,9 +62,6 @@ func (c *Client) shellOutput(ctx context.Context, serial string, args ...string)
 	return cmd.Output()
 }
 
-// logShellErr logs a per-field shell failure with context. Cancellation
-// errors are intentionally suppressed — they're not informative when the
-// caller has explicitly cancelled.
 func logShellErr(field string, err error) {
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return
@@ -78,11 +69,7 @@ func logShellErr(field string, err error) {
 	log.Printf("device_info: %s: %v", field, err)
 }
 
-// GetDeviceInfo fetches detailed device properties via parallel adb shell
-// invocations. Returns an error only when the anchor `getprop` call fails
-// (which indicates the device is offline, unauthorized, or disconnected).
-// Per-field failures are logged but do not fail the whole call; affected
-// fields fall back to fieldUnknown.
+// GetDeviceInfo fans out adb queries in parallel. Returns an error only when the anchor getprop fails (device offline/unauthorized); per-field failures are logged and fall back to "-".
 func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, error) {
 	ctx, cancel := context.WithTimeout(ctx, adbLongTimeout)
 	defer cancel()
@@ -97,7 +84,7 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 
 	g, gctx := errgroup.WithContext(ctx)
 
-	// Anchor: full getprop dump. If this fails, the device is unreachable.
+	// anchor: getprop failure means device is unreachable
 	g.Go(func() error {
 		out, err := c.shellOutput(gctx, serial, "getprop")
 		if err != nil {
@@ -121,8 +108,9 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 		return nil
 	})
 	g.Go(func() error {
-		out, err := c.shellOutput(gctx, serial, "df", "-h", "/data")
-		logShellErr("df -h /data", err)
+		// raw 1k-blocks; format ourselves to avoid toybox/busybox column drift
+		out, err := c.shellOutput(gctx, serial, "df", "-k", "/data")
+		logShellErr("df -k /data", err)
 		dfOut = out
 		return nil
 	})
@@ -145,8 +133,8 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 		return nil
 	})
 	g.Go(func() error {
-		out, err := c.shellOutput(gctx, serial, "ip", "addr", "show", "wlan0")
-		logShellErr("ip addr show wlan0", err)
+		out, err := c.shellOutput(gctx, serial, "ip", "-4", "-o", "addr", "show")
+		logShellErr("ip -4 -o addr show", err)
 		ipOut = out
 		return nil
 	})
@@ -163,8 +151,6 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 		return nil
 	})
 
-	// errgroup.Go callbacks never return errors here, so Wait cannot fail
-	// for any reason other than ctx cancellation — handled below.
 	_ = g.Wait()
 
 	if err := ctx.Err(); err != nil {
@@ -174,7 +160,6 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 		return DeviceInfo{Serial: serial}, fmt.Errorf("getprop failed (device offline?): %w", propsErr)
 	}
 
-	// Battery fields
 	battery := fieldUnknown
 	var batteryStatus, batteryTemp, batteryHealth string
 	for _, line := range strings.Split(string(battOut), "\n") {
@@ -195,14 +180,12 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 		}
 	}
 
-	// Storage
 	storageTotal, storageUsed, storageFree, storagePct := fieldUnknown, fieldUnknown, fieldUnknown, 0.0
 	dfLines := strings.Split(strings.TrimSpace(string(dfOut)), "\n")
 	if len(dfLines) >= 2 {
 		storageTotal, storageUsed, storageFree, storagePct = parseStorageLine(dfLines[1])
 	}
 
-	// Uptime
 	uptime := fieldUnknown
 	if fields := strings.Fields(strings.TrimSpace(string(upOut))); len(fields) >= 1 {
 		if secs, err := strconv.ParseFloat(fields[0], 64); err == nil {
@@ -210,7 +193,6 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 		}
 	}
 
-	// App count: filter to "package:" prefix to avoid counting noise lines.
 	appCount := fieldUnknown
 	if len(appOut) > 0 {
 		count := 0
@@ -248,6 +230,13 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 		densityDisplay = density + " dpi"
 	}
 
+	ipAddress := parseIPAddress(string(ipOut))
+	if ipAddress == fieldUnknown {
+		if v := prop("dhcp.wlan0.ipaddress"); v != fieldUnknown {
+			ipAddress = v
+		}
+	}
+
 	return DeviceInfo{
 		Model:          prop("ro.product.model"),
 		Manufacturer:   prop("ro.product.manufacturer"),
@@ -272,7 +261,7 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 		CPUPlatform:    prop("ro.board.platform"),
 		CPUCores:       parseCPUCores(string(cpuOut)),
 		WifiSSID:       parseWifiSSID(string(wifiOut)),
-		IPAddress:      parseIPAddress(string(ipOut)),
+		IPAddress:      ipAddress,
 		Uptime:         uptime,
 		AppCount:       appCount,
 		AndroidDisplay: androidDisplay,
@@ -280,7 +269,6 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 	}, nil
 }
 
-// GetDeviceID returns the hardware serial (ro.serialno) for a connected device.
 func (c *Client) GetDeviceID(serial string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), adbTimeout)
 	defer cancel()
