@@ -88,6 +88,15 @@ func statBlock(label string) (*styledText, fyne.CanvasObject) {
 	return val, container.NewVBox(val.rt, lbl.rt)
 }
 
+// statBlockTruncating is like statBlock but the value truncates with ellipsis
+// on overflow so very long content (e.g. build IDs) doesn't drag the column.
+func statBlockTruncating(label string) (*styledText, fyne.CanvasObject) {
+	val := newStyledText("", styleStat())
+	val.rt.Truncation = fyne.TextTruncateEllipsis
+	lbl := newStyledText(label, styleStatLabel())
+	return val, container.NewVBox(val.rt, lbl.rt)
+}
+
 func buildSectionLabel(icon fyne.Resource, title string) fyne.CanvasObject {
 	img := canvas.NewImageFromResource(icons.NewThemedIcon(icon))
 	img.SetMinSize(fyne.NewSize(sectionIconSize, sectionIconSize))

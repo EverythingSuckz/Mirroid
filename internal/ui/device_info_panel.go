@@ -247,10 +247,8 @@ func (dip *DeviceInfoPanel) newInfoView(serial string, info adb.DeviceInfo) *inf
 	v.batteryHeading = newStyledText("", styleHeading())
 	v.batteryBar, v.batteryLayout = buildThinBar(0)
 	v.batteryPills = container.NewHBox()
-	pillsScroll := container.NewHScroll(v.batteryPills)
-	pillsScroll.Direction = container.ScrollHorizontalOnly
 	batteryTopRow := container.NewBorder(nil, nil, v.batteryHeading.rt, nil, v.batteryBar)
-	batteryCard := buildCard(container.NewVBox(batteryTopRow, pillsScroll))
+	batteryCard := buildCard(container.NewVBox(batteryTopRow, v.batteryPills))
 	batterySection := container.NewVBox(buildSectionLabel(icons.BatteryMediumIcon, "Battery"), batteryCard)
 
 	v.storageHeading = newStyledText("", styleHeading())
@@ -290,7 +288,7 @@ func (dip *DeviceInfoPanel) newInfoView(serial string, info adb.DeviceInfo) *inf
 	v.androidVer, androidBlock = statBlock("Android")
 	v.uptime, uptimeBlock = statBlock("Uptime")
 	v.appCount, appsBlock = statBlock("Apps Installed")
-	v.buildID, buildBlock = statBlock("Build")
+	v.buildID, buildBlock = statBlockTruncating("Build")
 	systemCard := buildCard(container.NewGridWithColumns(2, androidBlock, uptimeBlock, appsBlock, buildBlock))
 	systemSection := container.NewVBox(buildSectionLabel(icons.SettingsIcon, "System"), systemCard)
 
