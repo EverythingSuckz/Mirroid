@@ -34,7 +34,11 @@ type themedStrokeResource struct {
 	cached   []byte
 }
 
-func (r *themedStrokeResource) Name() string { return r.src.Name() }
+// Name varies by the active foreground so each themed variant has a unique
+// key in fyne's name-based svg raster cache (avoids stale renders on theme switch).
+func (r *themedStrokeResource) Name() string {
+	return r.src.Name() + "@" + colorToHex(theme.Color(theme.ColorNameForeground))
+}
 
 func (r *themedStrokeResource) Content() []byte {
 	return r.contentForColor(theme.Color(theme.ColorNameForeground))

@@ -100,6 +100,8 @@ type infoView struct {
 
 	refreshBtn  *ttwidget.Button
 	refreshSpin *rotatingIcon
+
+	currentDeviceID string // refreshed by apply, read by click closures
 }
 
 func (v *infoView) startRefresh() {
@@ -372,16 +374,18 @@ func (dip *DeviceInfoPanel) newInfoView(serial string, info adb.DeviceInfo) *inf
 	}
 	dip.mirrorStopBox = container.NewStack(dip.mirrorBtn, dip.stopBtn)
 
-	deviceID := info.DeviceID // captured for the disconnect closure (stable per serial)
 	disconnectBtn := widget.NewButtonWithIcon("Disconnect", theme.LogoutIcon(), func() {
 		go func() {
 			dip.app.runner.StopFor(serial)
+			deviceID := v.currentDeviceID // read at click time so a refreshed value wins over the initial one
 			if err := dip.app.adbClient.Disconnect(serial); err != nil {
 				dip.app.logsPanel.Log("[ERROR]Disconnect: " + err.Error())
 			} else {
 				dip.app.logsPanel.Log("[OK]Disconnected " + serial)
-				dip.app.ignoreDevice(serial, deviceID)
-				dip.app.disconnectAliases(map[string]bool{deviceID: true})
+				if deviceID != "" && deviceID != "-" {
+					dip.app.ignoreDevice(serial, deviceID)
+					dip.app.disconnectAliases(map[string]bool{deviceID: true})
+				}
 			}
 			dip.app.devicePanel.refreshDevices() // triggers LoadDeviceInfo via the panel's refresh path
 		}()
@@ -410,11 +414,12 @@ func (dip *DeviceInfoPanel) newInfoView(serial string, info adb.DeviceInfo) *inf
 }
 
 func (v *infoView) apply(info adb.DeviceInfo) {
+	v.currentDeviceID = info.DeviceID
 	v.heroName.SetText(fmt.Sprintf("%s %s", info.Manufacturer, info.Model))
 	v.heroAddress.Set(info.Serial)
 
 	batteryDisplay := "-"
-	if info.BatteryPct > 0 {
+	if info.BatteryPct >= 0 {
 		batteryDisplay = fmt.Sprintf("%d%%", int(info.BatteryPct*100))
 	}
 	v.batteryHeading.Set(batteryDisplay)

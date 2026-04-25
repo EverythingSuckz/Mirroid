@@ -27,7 +27,8 @@ type DeviceInfo struct {
 	DeviceID       string
 	Resolution     string
 
-	BatteryPct    float64 // [0,1], zero when unknown
+	BatteryPct    float64 // [0,1] when known, negative when unknown
+
 	BatteryStatus string
 	BatteryTemp   string
 	BatteryHealth string
@@ -158,7 +159,7 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 	}
 
 	batteryLevel, batteryStatus, batteryTemp, batteryHealth := parseDumpsysBattery(string(battOut))
-	batteryPct := 0.0
+	batteryPct := -1.0 // unknown sentinel; preserves the 0% vs. unknown distinction
 	if batteryLevel >= 0 {
 		batteryPct = float64(batteryLevel) / 100.0
 		if batteryPct > 1.0 {
