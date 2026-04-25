@@ -27,6 +27,9 @@ type Config struct {
 	AppConf AppConfig
 }
 
+// Dir returns the on-disk directory holding the app's config and presets.
+func (c *Config) Dir() string { return c.dir }
+
 // AppConfig holds top-level app settings.
 type AppConfig struct {
 	ScrcpyPath       string    `json:"scrcpy_path"`

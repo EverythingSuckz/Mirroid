@@ -41,6 +41,16 @@ Download the latest release from [Releases](https://github.com/EverythingSuckz/M
 | **Linux**   | [`.deb` (Debian/Ubuntu)](https://github.com/EverythingSuckz/Mirroid/releases/latest) or [`.AppImage`](https://github.com/EverythingSuckz/Mirroid/releases/latest) | [`.tar.xz`](https://github.com/EverythingSuckz/Mirroid/releases/latest)                                                   |
 | **macOS**   | [`.dmg` (drag to Applications)](https://github.com/EverythingSuckz/Mirroid/releases/latest/download/mirroid-macos-arm64.dmg)                                      | [`.zip`](https://github.com/EverythingSuckz/Mirroid/releases/latest/download/mirroid-macos-arm64.zip)                     |
 
+### macOS: Gatekeeper bypass
+
+Mirroid releases are ad-hoc signed (no Apple Developer ID yet), so the first launch will fail with **"Mirroid is damaged and can't be opened"** or a Gatekeeper block. To allow it:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Mirroid.app
+```
+
+Or right-click the app in Finder → **Open** → **Open** to override Gatekeeper for that launch. After this, future launches work normally.
+
 ## Building
 
 #### Debug build:

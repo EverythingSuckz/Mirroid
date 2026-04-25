@@ -1,0 +1,15 @@
+Wi-Fi is enabled
+Stay-awake conditions: 0
+Mobile data: enabled
+Wi-Fi Hotspot: disabled
+
+mWifiInfo SSID: "MyHomeNet", BSSID: aa:bb:cc:dd:ee:ff, MAC: 02:00:00:00:00:00, Supplicant state: COMPLETED, RSSI: -52, Link speed: 433Mbps, Tx Link speed: 433Mbps, Max Supported Tx Link speed: 866Mbps, Rx Link speed: 433Mbps, Max Supported Rx Link speed: 866Mbps, Frequency: 5180MHz, Net ID: 0, Metered hint: false, score: 60
+
+Configured networks:
+  ID: 0 SSID: "OldSavedNet" PROVIDER-NAME: null BSSID: any FQDN: null REALM: null PRIO: 0 HIDDEN: false PMF: 0 CARRIER_ID: -1 SUBSCRIPTION_ID: -1 SUBSCRIPTION_GROUP: null
+  ID: 1 SSID: "AnotherSaved" PROVIDER-NAME: null BSSID: any FQDN: null REALM: null PRIO: 0 HIDDEN: false PMF: 0 CARRIER_ID: -1 SUBSCRIPTION_ID: -1 SUBSCRIPTION_GROUP: null
+
+Latest scan results:
+BSSID            Frequency  RSSI           Age(sec)   SSID                              Flags
+aa:bb:cc:dd:ee:ff   5180     -52(0:-52/1:-58) 1.234      "MyHomeNet"                       [WPA2-PSK-CCMP][ESS]
+11:22:33:44:55:66   2412     -78               4.567      "Neighbor5G"                      [WPA2-PSK-CCMP][ESS]
