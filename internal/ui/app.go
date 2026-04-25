@@ -166,8 +166,8 @@ func (a *App) initClients(adbPath, scrcpyPath string) {
 	a.runner.OnStateChange = func(serial string) {
 		fyne.Do(func() {
 			a.devicePanel.deviceList.Refresh()
+			a.deviceInfoPanel.refreshActionsLocked()
 		})
-		a.deviceInfoPanel.RefreshActions()
 	}
 
 	a.cfg.AppConf.ADBPath = adbPath

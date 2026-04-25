@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"image/color"
 	"log"
-	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -31,16 +30,16 @@ var (
 const (
 	progressBarHeight float32 = 6
 
-	pillRadius   float32 = 4
-	cardRadius   float32 = 8
-	badgeRadius  float32 = 15
+	pillRadius  float32 = 4
+	cardRadius  float32 = 8
+	badgeRadius float32 = 15
 
 	sectionIconSize float32 = 14
 	pillIconSize    float32 = 11
-	heroIconSmall    float32 = 24
-	heroIconLarge    float32 = 38
-	heroBoxSmall     float32 = 48
-	heroBoxLarge     float32 = 50
+	heroIconSmall   float32 = 24
+	heroIconLarge   float32 = 38
+	heroBoxSmall    float32 = 48
+	heroBoxLarge    float32 = 50
 
 	badgeTextSize float32 = 10
 	pillTextSize  float32 = 11
@@ -60,9 +59,7 @@ type DeviceInfoPanel struct {
 	stopBtn       *widget.Button
 	mirrorStopBox *fyne.Container
 
-	// cancelLoad cancels any in-flight GetDeviceInfo call. Mutated only on
-	// the Fyne UI thread (inside fyne.Do).
-	cancelLoad context.CancelFunc
+	cancelLoad context.CancelFunc // mutated only on the fyne ui thread
 }
 
 func NewDeviceInfoPanel(app *App) *DeviceInfoPanel {
@@ -127,18 +124,18 @@ func (dip *DeviceInfoPanel) LoadDeviceInfo(serial string) {
 		go func() {
 			info, err := dip.app.adbClient.GetDeviceInfo(ctx, serial)
 			fyne.Do(func() {
-				// Discard if the user has switched away or this load was cancelled.
 				if dip.currentSerial != serial || ctx.Err() != nil {
 					return
 				}
 				dip.activity.Stop()
-				if err != nil {
-					if !errors.Is(err, context.Canceled) {
-						log.Printf("device_info: load %s: %v", serial, err)
-					}
-					dip.container.Objects = []fyne.CanvasObject{dip.buildDisconnectedView(serial)}
-				} else {
+				switch {
+				case err == nil:
 					dip.container.Objects = []fyne.CanvasObject{dip.buildInfoView(serial, info)}
+				case errors.Is(err, context.Canceled):
+					return
+				default:
+					log.Printf("device_info: load %s: %v", serial, err)
+					dip.container.Objects = []fyne.CanvasObject{dip.buildErrorView(serial, err)}
 				}
 				dip.container.Refresh()
 			})
@@ -146,8 +143,7 @@ func (dip *DeviceInfoPanel) LoadDeviceInfo(serial string) {
 	})
 }
 
-// cancelInflightLocked cancels any in-flight GetDeviceInfo call. Must be
-// called on the Fyne UI thread (i.e. inside fyne.Do).
+// must be called on the fyne ui thread
 func (dip *DeviceInfoPanel) cancelInflightLocked() {
 	if dip.cancelLoad != nil {
 		dip.cancelLoad()
@@ -156,265 +152,31 @@ func (dip *DeviceInfoPanel) cancelInflightLocked() {
 }
 
 func (dip *DeviceInfoPanel) RefreshActions() {
-	fyne.Do(func() {
-		serial := dip.currentSerial
-		if serial == "" || dip.mirrorBtn == nil || dip.stopBtn == nil || dip.mirrorStopBox == nil {
-			return
-		}
-		state := dip.app.runner.StateFor(serial)
-		mirroring := state == scrcpy.StateLaunching || state == scrcpy.StateMirroring
-		if mirroring {
-			dip.mirrorBtn.Hide()
-			dip.stopBtn.Show()
-		} else {
-			dip.mirrorBtn.Show()
-			dip.stopBtn.Hide()
-		}
-	})
+	fyne.Do(dip.refreshActionsLocked)
 }
 
-func buildSectionLabel(icon fyne.Resource, title string) fyne.CanvasObject {
-	img := canvas.NewImageFromResource(icons.NewThemedIcon(icon))
-	img.SetMinSize(fyne.NewSize(sectionIconSize, sectionIconSize))
-	img.FillMode = canvas.ImageFillContain
-	label := widget.NewRichText(&widget.TextSegment{
-		Text: strings.ToUpper(title),
-		Style: widget.RichTextStyle{
-			ColorName: theme.ColorNamePlaceHolder,
-			SizeName:  theme.SizeNameCaptionText,
-			TextStyle: fyne.TextStyle{Bold: true},
-		},
-	})
-	return container.NewHBox(img, label)
-}
-
-func buildCard(content fyne.CanvasObject) fyne.CanvasObject {
-	bg := newThemedRect(theme.ColorNameHeaderBackground, cardRadius)
-	return container.NewStack(bg, container.NewPadded(content))
-}
-
-type themedRect struct {
-	widget.BaseWidget
-	colorName fyne.ThemeColorName
-	radius    float32
-}
-
-func newThemedRect(colorName fyne.ThemeColorName, radius float32) *themedRect {
-	r := &themedRect{colorName: colorName, radius: radius}
-	r.ExtendBaseWidget(r)
-	return r
-}
-
-func (r *themedRect) CreateRenderer() fyne.WidgetRenderer {
-	bg := canvas.NewRectangle(theme.Color(r.colorName))
-	bg.CornerRadius = r.radius
-	return &themedRectRenderer{rect: r, bg: bg}
-}
-
-type themedRectRenderer struct {
-	rect *themedRect
-	bg   *canvas.Rectangle
-}
-
-func (r *themedRectRenderer) Layout(size fyne.Size) { r.bg.Resize(size) }
-func (r *themedRectRenderer) MinSize() fyne.Size     { return fyne.NewSize(0, 0) }
-func (r *themedRectRenderer) Objects() []fyne.CanvasObject { return []fyne.CanvasObject{r.bg} }
-func (r *themedRectRenderer) Destroy()               {}
-
-func (r *themedRectRenderer) Refresh() {
-	r.bg.FillColor = theme.Color(r.rect.colorName)
-	r.bg.CornerRadius = r.rect.radius
-	r.bg.Refresh()
-}
-
-func buildCardKV(key, value string) fyne.CanvasObject {
-	keyWidget := widget.NewRichText(&widget.TextSegment{
-		Text: key,
-		Style: widget.RichTextStyle{
-			Inline:    true,
-			ColorName: theme.ColorNameForeground,
-		},
-	})
-	valueWidget := widget.NewRichText(&widget.TextSegment{
-		Text: value,
-		Style: widget.RichTextStyle{
-			Inline:    true,
-			ColorName: theme.ColorNameForeground,
-			TextStyle: fyne.TextStyle{Bold: true},
-			Alignment: fyne.TextAlignTrailing,
-		},
-	})
-	return container.NewBorder(nil, nil, keyWidget, nil, valueWidget)
-}
-
-func buildThinBar(pct float64) fyne.CanvasObject {
-	if pct < 0 {
-		pct = 0
-	}
-	if pct > 1 {
-		pct = 1
-	}
-	bg := canvas.NewRectangle(theme.Color(theme.ColorNameInputBorder))
-	bg.CornerRadius = progressBarHeight / 2
-	fg := canvas.NewRectangle(theme.Color(theme.ColorNamePrimary))
-	fg.CornerRadius = progressBarHeight / 2
-	return container.New(&progressBarLayout{pct: pct}, bg, fg)
-}
-
-type progressBarLayout struct {
-	pct float64
-}
-
-func (p *progressBarLayout) MinSize(_ []fyne.CanvasObject) fyne.Size {
-	return fyne.NewSize(0, progressBarHeight)
-}
-
-func (p *progressBarLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	if len(objects) < 2 {
+// must be called on the fyne ui thread
+func (dip *DeviceInfoPanel) refreshActionsLocked() {
+	serial := dip.currentSerial
+	if serial == "" || dip.mirrorBtn == nil || dip.stopBtn == nil || dip.mirrorStopBox == nil {
 		return
 	}
-	y := (size.Height - progressBarHeight) / 2
-	if y < 0 {
-		y = 0
-	}
-	barWidth := size.Width - theme.Padding()*2
-	if barWidth < 0 {
-		barWidth = 0
-	}
-	objects[0].Resize(fyne.NewSize(barWidth, progressBarHeight))
-	objects[0].Move(fyne.NewPos(0, y))
-
-	fgWidth := barWidth * float32(p.pct)
-	objects[1].Resize(fyne.NewSize(fgWidth, progressBarHeight))
-	objects[1].Move(fyne.NewPos(0, y))
-}
-
-type badgeLayout struct {
-	padX float32
-	padY float32
-}
-
-func (l *badgeLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	if len(objects) < 2 {
-		return fyne.NewSize(0, 0)
-	}
-	contentMin := objects[1].MinSize()
-	return fyne.NewSize(contentMin.Width+l.padX*2, contentMin.Height+l.padY*2)
-}
-
-func (l *badgeLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	if len(objects) < 2 {
-		return
-	}
-	objects[0].Resize(size)
-	objects[0].Move(fyne.NewPos(0, 0))
-	contentMin := objects[1].MinSize()
-	objects[1].Resize(contentMin)
-	objects[1].Move(fyne.NewPos(
-		(size.Width-contentMin.Width)/2,
-		(size.Height-contentMin.Height)/2,
-	))
-}
-
-func buildStatusBadge(text string, pillColor color.Color) fyne.CanvasObject {
-	bg := canvas.NewRectangle(pillColor)
-	bg.CornerRadius = badgeRadius
-	label := canvas.NewText(text, color.White)
-	label.TextSize = badgeTextSize
-	badge := container.New(&badgeLayout{padX: statusBadgePadX, padY: badgePadY}, bg, label)
-	return container.NewCenter(badge)
-}
-
-func buildInfoPill(icon fyne.Resource, text string, pillColor color.Color) fyne.CanvasObject {
-	bg := canvas.NewRectangle(pillColor)
-	bg.CornerRadius = pillRadius
-	img := canvas.NewImageFromResource(icons.NewTintedIcon(icon, color.White))
-	img.SetMinSize(fyne.NewSize(pillIconSize, pillIconSize))
-	img.FillMode = canvas.ImageFillContain
-	label := canvas.NewText(text, color.White)
-	label.TextSize = pillTextSize
-	row := container.NewHBox(img, label)
-	return container.New(&badgeLayout{padX: pillPadX, padY: badgePadY}, bg, row)
-}
-
-func batteryStatusColor(status string) color.Color {
-	lower := strings.ToLower(status)
-	switch {
-	case strings.Contains(lower, "charging"), strings.Contains(lower, "full"):
-		return pillGreen
-	case strings.Contains(lower, "discharging"):
-		return pillRed
-	default:
-		return pillGray
+	state := dip.app.runner.StateFor(serial)
+	mirroring := state == scrcpy.StateLaunching || state == scrcpy.StateMirroring
+	if mirroring {
+		dip.mirrorBtn.Hide()
+		dip.stopBtn.Show()
+	} else {
+		dip.mirrorBtn.Show()
+		dip.stopBtn.Hide()
 	}
 }
 
-func buildStatBlock(value, label string) fyne.CanvasObject {
-	valueText := widget.NewRichText(&widget.TextSegment{
-		Text: value,
-		Style: widget.RichTextStyle{
-			Alignment: fyne.TextAlignCenter,
-			ColorName: theme.ColorNameForeground,
-			SizeName:  theme.SizeNameSubHeadingText,
-			TextStyle: fyne.TextStyle{Bold: true},
-		},
-	})
-	labelText := widget.NewRichText(&widget.TextSegment{
-		Text: label,
-		Style: widget.RichTextStyle{
-			Alignment: fyne.TextAlignCenter,
-			ColorName: theme.ColorNamePlaceHolder,
-			SizeName:  theme.SizeNameCaptionText,
-		},
-	})
-	return container.NewVBox(valueText, labelText)
-}
-
-func buildHeroHeader(info adb.DeviceInfo) fyne.CanvasObject {
-	iconBg := canvas.NewRectangle(pillGreen)
-	iconBg.CornerRadius = cardRadius
-	phoneIcon := canvas.NewImageFromResource(icons.NewThemedIcon(icons.SmartphoneIcon))
-	phoneIcon.SetMinSize(fyne.NewSize(heroIconLarge, heroIconLarge))
-	phoneIcon.FillMode = canvas.ImageFillContain
-	iconBlock := container.NewStack(iconBg, container.NewCenter(phoneIcon))
-	iconWrapper := container.New(&fixedSizeLayout{width: heroBoxLarge, height: heroBoxLarge}, iconBlock)
-
-	name := fmt.Sprintf("%s %s", info.Manufacturer, info.Model)
-	nameLabel := widget.NewLabel(name)
-	nameLabel.TextStyle = fyne.TextStyle{Bold: true}
-
-	addressText := widget.NewRichText(&widget.TextSegment{
-		Text: info.Serial,
-		Style: widget.RichTextStyle{
-			Inline:    true,
-			ColorName: theme.ColorNamePlaceHolder,
-			SizeName:  theme.SizeNameCaptionText,
-		},
-	})
-
-	connectedBadge := buildStatusBadge("● Connected", pillGreen)
-
-	addressRow := container.NewHBox(addressText, connectedBadge)
-	rightSide := container.NewVBox(nameLabel, addressRow)
-
-	iconWithGap := container.NewHBox(iconWrapper, widget.NewSeparator())
-	return container.NewBorder(nil, nil, iconWithGap, nil, rightSide)
-}
-
-type fixedSizeLayout struct {
-	width  float32
-	height float32
-}
-
-func (f *fixedSizeLayout) MinSize(_ []fyne.CanvasObject) fyne.Size {
-	return fyne.NewSize(f.width, f.height)
-}
-
-func (f *fixedSizeLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	for _, o := range objects {
-		o.Resize(size)
-		o.Move(fyne.NewPos(0, 0))
+func (dip *DeviceInfoPanel) deviceDisplayName(serial string) string {
+	if dev, ok := dip.app.devicePanel.GetDevice(serial); ok && dev.Model != "" {
+		return dev.Model
 	}
+	return serial
 }
 
 func (dip *DeviceInfoPanel) buildInfoView(serial string, info adb.DeviceInfo) fyne.CanvasObject {
@@ -569,8 +331,7 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info adb.DeviceInfo) fy
 				dip.app.ignoreDevice(serial, info.DeviceID)
 				dip.app.disconnectAliases(map[string]bool{info.DeviceID: true})
 			}
-			dip.app.devicePanel.refreshDevices()
-			dip.LoadDeviceInfo(serial)
+			dip.app.devicePanel.refreshDevices() // triggers LoadDeviceInfo via the panel's refresh path
 		}()
 	})
 	disconnectBtn.Importance = widget.DangerImportance
@@ -595,23 +356,8 @@ func (dip *DeviceInfoPanel) buildInfoView(serial string, info adb.DeviceInfo) fy
 }
 
 func (dip *DeviceInfoPanel) buildDisconnectedView(serial string) fyne.CanvasObject {
-	name := serial
-	if dev, ok := dip.app.devicePanel.GetDevice(serial); ok && dev.Model != "" {
-		name = dev.Model
-	}
-
-	iconBg := canvas.NewRectangle(pillGray)
-	iconBg.CornerRadius = cardRadius
-	phoneIcon := canvas.NewImageFromResource(icons.NewThemedIcon(icons.SmartphoneIcon))
-	phoneIcon.SetMinSize(fyne.NewSize(heroIconSmall, heroIconSmall))
-	phoneIcon.FillMode = canvas.ImageFillContain
-	iconBlock := container.NewStack(iconBg, container.NewCenter(phoneIcon))
-	iconWrapper := container.New(&fixedSizeLayout{width: heroBoxSmall, height: heroBoxSmall}, iconBlock)
-
-	nameLabel := widget.NewLabel(name)
-	nameLabel.TextStyle = fyne.TextStyle{Bold: true}
-
-	disconnectedBadge := buildStatusBadge("● Disconnected", pillGray)
+	name := dip.deviceDisplayName(serial)
+	heroArea := buildSmallHero(name, "● Disconnected", pillGray)
 
 	reconnecting := dip.app.devicePanel.IsReconnecting(serial)
 
@@ -641,15 +387,33 @@ func (dip *DeviceInfoPanel) buildDisconnectedView(serial string) fyne.CanvasObje
 
 	actions := container.NewGridWithColumns(2, reconnectBtn, removeBtn)
 
-	heroArea := container.NewBorder(nil, nil, iconWrapper, nil,
-		container.NewVBox(nameLabel, disconnectedBadge),
-	)
-
-	centerContent := container.NewCenter(container.NewVBox(
-		heroArea,
-		msg,
-	))
+	centerContent := container.NewCenter(container.NewVBox(heroArea, msg))
 	bottomArea := container.NewVBox(widget.NewSeparator(), actions)
+
+	return container.NewBorder(nil, bottomArea, nil, nil, centerContent)
+}
+
+func (dip *DeviceInfoPanel) buildErrorView(serial string, loadErr error) fyne.CanvasObject {
+	name := dip.deviceDisplayName(serial)
+	heroArea := buildSmallHero(name, "● Error", pillRed)
+
+	msg := widget.NewLabel("Couldn't read device info — is the screen unlocked?")
+	msg.Alignment = fyne.TextAlignCenter
+	msg.TextStyle = fyne.TextStyle{Italic: true}
+	msg.Wrapping = fyne.TextWrapWord
+
+	detail := widget.NewLabel(loadErr.Error())
+	detail.Alignment = fyne.TextAlignCenter
+	detail.Wrapping = fyne.TextWrapWord
+	detail.Importance = widget.LowImportance
+
+	retryBtn := widget.NewButtonWithIcon("Retry", theme.ViewRefreshIcon(), func() {
+		go dip.LoadDeviceInfo(serial)
+	})
+	retryBtn.Importance = widget.HighImportance
+
+	centerContent := container.NewCenter(container.NewVBox(heroArea, msg, detail))
+	bottomArea := container.NewVBox(widget.NewSeparator(), retryBtn)
 
 	return container.NewBorder(nil, bottomArea, nil, nil, centerContent)
 }
