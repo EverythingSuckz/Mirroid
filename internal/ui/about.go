@@ -10,6 +10,8 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
+	"mirroid/internal/platform"
 )
 
 // showAboutDialog shows a modal popup with app info.
@@ -65,6 +67,12 @@ func (a *App) showAboutDialog() {
 		_ = a.fyneApp.OpenURL(ghURL)
 	})
 
+	configBtn := widget.NewButton("Open Config Folder", func() {
+		if err := platform.OpenFolder(a.cfg.Dir()); err != nil {
+			a.logsPanel.Log("[ERROR]Open config: " + err.Error())
+		}
+	})
+
 	var popup *widget.PopUp
 
 	// Header row: title left, close X right.
@@ -89,7 +97,7 @@ func (a *App) showAboutDialog() {
 		widget.NewSeparator(),
 		container.NewCenter(infoText),
 		widget.NewSeparator(),
-		container.NewCenter(ghBtn),
+		container.NewCenter(container.NewHBox(ghBtn, configBtn)),
 	)
 
 	popup = widget.NewModalPopUp(container.NewPadded(body), a.window.Canvas())
