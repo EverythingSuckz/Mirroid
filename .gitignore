@@ -46,3 +46,6 @@ deb-root/
 *.dmg
 *-setup.exe
 linuxdeploy-*.AppImage
+
+# cc
+.sup*
