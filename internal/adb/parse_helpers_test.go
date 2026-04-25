@@ -7,44 +7,54 @@ import (
 
 func TestParseBatteryStatus(t *testing.T) {
 	tests := []struct {
-		input string
-		want  string
+		input    string
+		want     BatteryStatus
+		wantText string
 	}{
-		{"2", "Charging"},
-		{"3", "Discharging"},
-		{"4", "Not charging"},
-		{"5", "Full"},
-		{"1", "Unknown"},
-		{"", "Unknown"},
-		{"garbage", "Unknown"},
-		{"99", "Unknown"},
+		{"2", BatteryStatusCharging, "Charging"},
+		{"3", BatteryStatusDischarging, "Discharging"},
+		{"4", BatteryStatusNotCharging, "Not charging"},
+		{"5", BatteryStatusFull, "Full"},
+		{"1", BatteryStatusUnknown, "Unknown"},
+		{"", BatteryStatusUnknown, "Unknown"},
+		{"garbage", BatteryStatusUnknown, "Unknown"},
+		{"99", BatteryStatus(99), "Unknown"}, // unknown int code falls back to "Unknown" text
 	}
 	for _, tt := range tests {
-		if got := parseBatteryStatus(tt.input); got != tt.want {
-			t.Errorf("parseBatteryStatus(%q) = %q, want %q", tt.input, got, tt.want)
+		got := parseBatteryStatus(tt.input)
+		if got != tt.want {
+			t.Errorf("parseBatteryStatus(%q) = %d, want %d", tt.input, got, tt.want)
+		}
+		if got.String() != tt.wantText {
+			t.Errorf("parseBatteryStatus(%q).String() = %q, want %q", tt.input, got.String(), tt.wantText)
 		}
 	}
 }
 
 func TestParseBatteryHealth(t *testing.T) {
 	tests := []struct {
-		input string
-		want  string
+		input    string
+		want     BatteryHealth
+		wantText string
 	}{
-		{"1", "Unknown"},
-		{"2", "Good"},
-		{"3", "Overheat"},
-		{"4", "Dead"},
-		{"5", "Over voltage"},
-		{"6", "Failure"},
-		{"7", "Cold"},
-		{"", "Unknown"},
-		{"garbage", "Unknown"},
-		{"99", "Unknown"},
+		{"1", BatteryHealthUnknown, "Unknown"},
+		{"2", BatteryHealthGood, "Good"},
+		{"3", BatteryHealthOverheat, "Overheat"},
+		{"4", BatteryHealthDead, "Dead"},
+		{"5", BatteryHealthOverVoltage, "Over voltage"},
+		{"6", BatteryHealthFailure, "Failure"},
+		{"7", BatteryHealthCold, "Cold"},
+		{"", BatteryHealthUnknown, "Unknown"},
+		{"garbage", BatteryHealthUnknown, "Unknown"},
+		{"99", BatteryHealth(99), "Unknown"},
 	}
 	for _, tt := range tests {
-		if got := parseBatteryHealth(tt.input); got != tt.want {
-			t.Errorf("parseBatteryHealth(%q) = %q, want %q", tt.input, got, tt.want)
+		got := parseBatteryHealth(tt.input)
+		if got != tt.want {
+			t.Errorf("parseBatteryHealth(%q) = %d, want %d", tt.input, got, tt.want)
+		}
+		if got.String() != tt.wantText {
+			t.Errorf("parseBatteryHealth(%q).String() = %q, want %q", tt.input, got.String(), tt.wantText)
 		}
 	}
 }
@@ -148,21 +158,21 @@ func TestParseCPUCores(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
-		want  string
+		want  int
 	}{
-		{"two cores", "processor\t: 0\nBogoMIPS\t: 52.00\nprocessor\t: 1\n", "2"},
+		{"two cores", "processor\t: 0\nBogoMIPS\t: 52.00\nprocessor\t: 1\n", 2},
 		// ARM header line "Processor : AArch64 ..." must NOT be counted —
 		// the device has 2 cores, not 3.
-		{"arm header excluded", "Processor\t: AArch64 Processor rev 4 (aarch64)\nprocessor\t: 0\nprocessor\t: 1\n", "2"},
-		{"empty", "", "-"},
-		{"no matches", "no processor lines here", "-"},
+		{"arm header excluded", "Processor\t: AArch64 Processor rev 4 (aarch64)\nprocessor\t: 0\nprocessor\t: 1\n", 2},
+		{"empty", "", -1},
+		{"no matches", "no processor lines here", -1},
 		// Non-numeric value should be ignored.
-		{"non-numeric value", "processor\t: foo\nprocessor\t: 0\n", "1"},
-		{"eight cores", "processor\t: 0\nprocessor\t: 1\nprocessor\t: 2\nprocessor\t: 3\nprocessor\t: 4\nprocessor\t: 5\nprocessor\t: 6\nprocessor\t: 7\n", "8"},
+		{"non-numeric value", "processor\t: foo\nprocessor\t: 0\n", 1},
+		{"eight cores", "processor\t: 0\nprocessor\t: 1\nprocessor\t: 2\nprocessor\t: 3\nprocessor\t: 4\nprocessor\t: 5\nprocessor\t: 6\nprocessor\t: 7\n", 8},
 	}
 	for _, tt := range tests {
 		if got := parseCPUCores(tt.input); got != tt.want {
-			t.Errorf("parseCPUCores(%q) = %q, want %q", tt.input, got, tt.want)
+			t.Errorf("parseCPUCores(%q) = %d, want %d", tt.input, got, tt.want)
 		}
 	}
 }

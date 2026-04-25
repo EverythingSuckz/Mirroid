@@ -29,9 +29,9 @@ type DeviceInfo struct {
 
 	BatteryPct    float64 // [0,1] when known, negative when unknown
 
-	BatteryStatus string
+	BatteryStatus BatteryStatus
 	BatteryTemp   string
-	BatteryHealth string
+	BatteryHealth BatteryHealth
 
 	StorageTotal   string
 	StorageUsed    string
@@ -41,13 +41,13 @@ type DeviceInfo struct {
 
 	RAM         string
 	CPUPlatform string
-	CPUCores    string
+	CPUCores    int // -1 when unknown
 
 	WifiSSID  string
 	IPAddress string
 
 	Uptime         string
-	AppCount       string
+	AppCount       int // -1 when unknown
 	AndroidDisplay string
 	DensityDisplay string
 }
@@ -180,7 +180,7 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 		}
 	}
 
-	appCount := fieldUnknown
+	appCount := -1
 	if len(appOut) > 0 {
 		count := 0
 		for _, line := range strings.Split(string(appOut), "\n") {
@@ -188,7 +188,7 @@ func (c *Client) GetDeviceInfo(ctx context.Context, serial string) (DeviceInfo, 
 				count++
 			}
 		}
-		appCount = strconv.Itoa(count)
+		appCount = count
 	}
 
 	prop := func(key string) string {

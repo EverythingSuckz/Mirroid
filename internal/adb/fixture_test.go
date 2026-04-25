@@ -31,11 +31,11 @@ func TestFixtureDumpsysBattery(t *testing.T) {
 	if level != 73 {
 		t.Errorf("level = %d, want 73", level)
 	}
-	if got := parseBatteryStatus(status); got != "Charging" {
-		t.Errorf("battery status = %q, want %q", got, "Charging")
+	if got := parseBatteryStatus(status); got != BatteryStatusCharging {
+		t.Errorf("battery status = %v, want %v", got, BatteryStatusCharging)
 	}
-	if got := parseBatteryHealth(health); got != "Good" {
-		t.Errorf("battery health = %q, want %q", got, "Good")
+	if got := parseBatteryHealth(health); got != BatteryHealthGood {
+		t.Errorf("battery health = %v, want %v", got, BatteryHealthGood)
 	}
 	if got := parseBatteryTemp(temp); got != "31.2°C" {
 		t.Errorf("battery temp = %q, want %q", got, "31.2°C")
@@ -73,8 +73,8 @@ func TestFixtureMeminfo(t *testing.T) {
 func TestFixtureCpuinfoArm(t *testing.T) {
 	out := loadFixture(t, "cpuinfo_arm.txt")
 	// 8 per-core "processor" entries; the ARM "Processor" header line must NOT count
-	if got := parseCPUCores(out); got != "8" {
-		t.Errorf("parseCPUCores = %q, want %q", got, "8")
+	if got := parseCPUCores(out); got != 8 {
+		t.Errorf("parseCPUCores = %d, want 8", got)
 	}
 }
 

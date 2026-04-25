@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"mirroid/internal/adb"
 	"mirroid/internal/icons"
 )
 
@@ -151,11 +152,11 @@ func buildInfoPill(icon fyne.Resource, text string, pillColor color.Color) fyne.
 	return container.New(&badgeLayout{padX: pillPadX, padY: badgePadY}, bg, row)
 }
 
-func batteryStatusColor(status string) color.Color {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "charging", "full":
+func batteryStatusColor(status adb.BatteryStatus) color.Color {
+	switch status {
+	case adb.BatteryStatusCharging, adb.BatteryStatusFull:
 		return pillGreen
-	case "discharging":
+	case adb.BatteryStatusDischarging:
 		return pillRed
 	default:
 		return pillGray
