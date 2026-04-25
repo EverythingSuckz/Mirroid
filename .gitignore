@@ -49,3 +49,4 @@ linuxdeploy-*.AppImage
 
 # cc
 .sup*
+*.md
