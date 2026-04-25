@@ -174,9 +174,9 @@ func (dip *DeviceInfoPanel) LoadDeviceInfo(serial string) {
 						dip.refreshActionsLocked()
 					} else {
 						dip.info = dip.newInfoView(serial, info)
-						dip.container.Objects = []fyne.CanvasObject{dip.info.root}
-						dip.container.Refresh()
 					}
+					dip.container.Objects = []fyne.CanvasObject{dip.info.root}
+					dip.container.Refresh()
 				case errors.Is(err, context.Canceled):
 					return
 				default:
