@@ -59,10 +59,13 @@ func NewThemedIcon(res fyne.Resource) fyne.Resource {
 }
 
 // NewTintedIcon substitutes `currentColor` once at construction; use NewThemedIcon when the color should follow the theme.
+// the tint hex is embedded in the resource name so each tinted variant has a
+// unique key in fyne's name-based svg cache.
 func NewTintedIcon(res fyne.Resource, c color.Color) fyne.Resource {
-	content := strings.ReplaceAll(string(res.Content()), "currentColor", colorToHex(c))
+	hex := colorToHex(c)
+	content := strings.ReplaceAll(string(res.Content()), "currentColor", hex)
 	return &fyne.StaticResource{
-		StaticName:    res.Name(),
+		StaticName:    res.Name() + "@" + hex,
 		StaticContent: []byte(content),
 	}
 }
