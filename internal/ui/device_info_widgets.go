@@ -12,6 +12,7 @@ import (
 
 	"mirroid/internal/adb"
 	"mirroid/internal/icons"
+	"mirroid/internal/model"
 )
 
 // styledText pairs a RichText widget with its first segment for in-place text updates.
@@ -140,6 +141,22 @@ func buildStatusBadge(text string, pillColor color.Color) fyne.CanvasObject {
 	return container.NewCenter(badge)
 }
 
+// statusColor maps a DeviceStatus to its pill background color.
+func statusColor(s model.DeviceStatus) color.Color {
+	switch s {
+	case model.StatusConnected:
+		return pillGreen
+	case model.StatusMirroring:
+		return pillBlue
+	case model.StatusLaunching, model.StatusReconnecting:
+		return pillTeal
+	case model.StatusError:
+		return pillRed
+	default:
+		return pillGray
+	}
+}
+
 func buildInfoPill(icon fyne.Resource, text string, pillColor color.Color) fyne.CanvasObject {
 	bg := canvas.NewRectangle(pillColor)
 	bg.CornerRadius = pillRadius
@@ -150,6 +167,16 @@ func buildInfoPill(icon fyne.Resource, text string, pillColor color.Color) fyne.
 	label.TextSize = pillTextSize
 	row := container.NewHBox(img, label)
 	return container.New(&badgeLayout{padX: pillPadX, padY: badgePadY}, bg, row)
+}
+
+// connTypeLabel returns "Wi-Fi" or "USB" based on whether the serial looks
+// like an IP:port wireless target. Used by both the device list and the side
+// panel hero so the two surfaces stay consistent.
+func connTypeLabel(serial string) string {
+	if strings.Contains(serial, ":") {
+		return "Wi-Fi"
+	}
+	return "USB"
 }
 
 func batteryStatusColor(status adb.BatteryStatus) color.Color {
@@ -163,20 +190,29 @@ func batteryStatusColor(status adb.BatteryStatus) color.Color {
 	}
 }
 
-// buildHeroHeader returns the connected-device hero block plus refs to the
-// dynamic name + address widgets so they can be updated in place on refresh.
-func buildHeroHeader() (fyne.CanvasObject, *widget.Label, *styledText) {
-	iconBg := canvas.NewRectangle(pillGreen)
-	iconBg.CornerRadius = cardRadius
-	phoneIcon := canvas.NewImageFromResource(icons.NewThemedIcon(icons.SmartphoneIcon))
-	phoneIcon.SetMinSize(fyne.NewSize(heroIconLarge, heroIconLarge))
-	phoneIcon.FillMode = canvas.ImageFillContain
-	iconBlock := container.NewStack(iconBg, container.NewCenter(phoneIcon))
+// heroHeader bundles the hero block root with refs to its dynamic widgets so
+// callers can update text/icon in place on refresh.
+type heroHeader struct {
+	Root    fyne.CanvasObject
+	Name    *styledText
+	Address *styledText
+	Icon    *canvas.Image
+	IconBg  *avatarBg
+}
+
+func buildHeroHeader() heroHeader {
+	iconBg := newAvatarBg(cardRadius, pillGreen)
+	heroIcon := canvas.NewImageFromResource(icons.NewTintedIcon(icons.SmartphoneIcon, color.White))
+	heroIcon.SetMinSize(fyne.NewSize(heroIconLarge, heroIconLarge))
+	heroIcon.FillMode = canvas.ImageFillContain
+	iconBlock := container.NewStack(iconBg, container.NewCenter(heroIcon))
 	iconWrapper := container.New(&fixedSizeLayout{width: heroBoxLarge, height: heroBoxLarge}, iconBlock)
 
-	nameLabel := widget.NewLabel("")
-	nameLabel.TextStyle = fyne.TextStyle{Bold: true}
-	nameLabel.Truncation = fyne.TextTruncateEllipsis
+	name := newStyledText("", widget.RichTextStyle{
+		TextStyle: fyne.TextStyle{Bold: true},
+		ColorName: theme.ColorNameForeground,
+	})
+	name.rt.Truncation = fyne.TextTruncateEllipsis
 
 	address := newStyledText("", widget.RichTextStyle{
 		Inline:    true,
@@ -185,14 +221,24 @@ func buildHeroHeader() (fyne.CanvasObject, *widget.Label, *styledText) {
 	})
 
 	connectedBadge := buildStatusBadge("● Connected", pillGreen)
+	// transparent spacer matches RichText's internal left padding (which uses
+	// SizeNameInnerPadding) so the pill's bg edge aligns with the text rows above and below.
+	badgeLeftPad := canvas.NewRectangle(color.Transparent)
+	badgeLeftPad.SetMinSize(fyne.NewSize(theme.Size(theme.SizeNameInnerPadding), 0))
+	badgeRow := container.NewHBox(badgeLeftPad, connectedBadge)
 
-	addressRow := container.NewHBox(address.rt, connectedBadge)
-	rightSide := container.NewVBox(nameLabel, addressRow)
+	rightSide := container.NewVBox(name.rt, badgeRow, address.rt)
 
 	gap := canvas.NewRectangle(color.Transparent)
 	gap.SetMinSize(fyne.NewSize(theme.Padding(), 0))
 	iconWithGap := container.NewHBox(iconWrapper, gap)
-	return container.NewBorder(nil, nil, iconWithGap, nil, rightSide), nameLabel, address
+	return heroHeader{
+		Root:    container.NewBorder(nil, nil, iconWithGap, nil, rightSide),
+		Name:    name,
+		Address: address,
+		Icon:    heroIcon,
+		IconBg:  iconBg,
+	}
 }
 
 func buildSmallHero(name, badgeText string, accent color.Color) fyne.CanvasObject {

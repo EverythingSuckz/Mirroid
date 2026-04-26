@@ -24,6 +24,13 @@ type variantTheme struct {
 var _ fyne.Theme = (*variantTheme)(nil)
 
 func (t *variantTheme) Color(name fyne.ThemeColorName, _ fyne.ThemeVariant) color.Color {
+	if name == theme.ColorNameSelection {
+		// subtle wash; the default saturated blue is too loud on row selection
+		if t.variant == theme.VariantDark {
+			return color.NRGBA{R: 255, G: 255, B: 255, A: 24}
+		}
+		return color.NRGBA{R: 0, G: 0, B: 0, A: 18}
+	}
 	return theme.DefaultTheme().Color(name, t.variant)
 }
 

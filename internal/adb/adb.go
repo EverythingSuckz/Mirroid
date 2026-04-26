@@ -7,6 +7,7 @@ import (
 	"net"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"mirroid/internal/model"
@@ -20,9 +21,10 @@ const (
 
 // Device represents a connected Android device.
 type Device struct {
-	Serial string `json:"serial"`
-	Model  string `json:"model"`
-	Source string `json:"source"` // "usb", "wireless", "mdns"
+	Serial       string `json:"serial"`
+	Model        string `json:"model"`
+	Manufacturer string `json:"manufacturer,omitempty"`
+	Source       string `json:"source"` // "usb", "wireless", "mdns"
 }
 
 // String returns a display-friendly label.
@@ -45,13 +47,24 @@ func isIPPort(serial string) bool {
 
 type Client struct {
 	adbPath string
+
+	propsMu    sync.Mutex
+	propsCache map[string]deviceProps // serial → cached manufacturer/model from getprop
+}
+
+type deviceProps struct {
+	manufacturer string
+	model        string
 }
 
 func NewClient(adbPath string) *Client {
 	if adbPath == "" {
 		adbPath = "adb"
 	}
-	return &Client{adbPath: adbPath}
+	return &Client{
+		adbPath:    adbPath,
+		propsCache: make(map[string]deviceProps),
+	}
 }
 
 // Path returns the configured adb binary path.
@@ -109,7 +122,7 @@ func (c *Client) GetDevices() ([]Device, error) {
 		devices = append(devices, Device{
 			Serial: serial,
 			Model:  devModel,
-			Source:  source,
+			Source: source,
 		})
 	}
 
@@ -134,7 +147,75 @@ func (c *Client) GetDevices() ([]Device, error) {
 			result = append(result, d)
 		}
 	}
+
+	// fetch manufacturer + model per device in parallel; tolerate failures
+	c.fillDeviceProperties(result)
+
 	return result, nil
+}
+
+// fillDeviceProperties populates the Manufacturer field and refreshes Model
+// for each device via getprop, preferring the getprop model (with proper
+// spaces) over `adb devices -l`'s underscore-encoded form. Results are cached
+// per serial since these props don't change at runtime; cache lookups skip the
+// adb roundtrip entirely. Per-device failures are silently ignored.
+func (c *Client) fillDeviceProperties(devices []Device) {
+	var wg sync.WaitGroup
+	for i := range devices {
+		// fast path: cached
+		c.propsMu.Lock()
+		cached, ok := c.propsCache[devices[i].Serial]
+		c.propsMu.Unlock()
+		if ok {
+			if cached.manufacturer != "" {
+				devices[i].Manufacturer = cached.manufacturer
+			}
+			if cached.model != "" {
+				devices[i].Model = cached.model
+			}
+			continue
+		}
+
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), adbTimeout)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, c.adbPath, "-s", devices[idx].Serial, "shell",
+				"getprop ro.product.manufacturer; getprop ro.product.model")
+			platform.HideConsole(cmd)
+			out, err := cmd.Output()
+			if err != nil {
+				return
+			}
+			// strip embedded \r (adb on Windows emits \r\n) up front
+			normalized := strings.ReplaceAll(string(out), "\r", "")
+			lines := strings.Split(strings.TrimRight(normalized, "\n"), "\n")
+			var mfr, mdl string
+			if len(lines) > 0 {
+				mfr = strings.TrimSpace(lines[0])
+				if strings.EqualFold(mfr, "unknown") {
+					mfr = "" // treat the literal Android sentinel as missing
+				}
+			}
+			if len(lines) > 1 {
+				mdl = strings.TrimSpace(lines[1])
+				if strings.EqualFold(mdl, "unknown") {
+					mdl = "" // android sentinel; let `adb devices -l` model win
+				}
+			}
+			if mfr != "" {
+				devices[idx].Manufacturer = mfr
+			}
+			if mdl != "" {
+				devices[idx].Model = mdl
+			}
+			c.propsMu.Lock()
+			c.propsCache[devices[idx].Serial] = deviceProps{manufacturer: mfr, model: mdl}
+			c.propsMu.Unlock()
+		}(i)
+	}
+	wg.Wait()
 }
 
 // Pair runs `adb pair <addr> <password>`.
@@ -196,4 +277,3 @@ func (c *Client) VerifyConnection(serial string) bool {
 	}
 	return strings.TrimSpace(string(out)) == "ok"
 }
-

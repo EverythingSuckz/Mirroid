@@ -17,6 +17,11 @@ import (
 	"mirroid/internal/scrcpy"
 )
 
+const (
+	deviceRowAvatarSize float32 = 36
+	deviceRowIconSize   float32 = 18
+)
+
 // DevicePanel manages device selection via a multi-select table.
 type DevicePanel struct {
 	app            *App
@@ -74,16 +79,6 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 		dp.syncActionVisibility()
 	})
 
-	headerRow := container.NewBorder(nil, nil,
-		dp.selectAllCheck, nil,
-		container.NewGridWithColumns(4,
-			widget.NewLabelWithStyle("Model", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-			widget.NewLabelWithStyle("Address", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-			widget.NewLabelWithStyle("Type", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-			widget.NewLabelWithStyle("Status", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		),
-	)
-
 	dp.deviceList = widget.NewList(
 		func() int {
 			dp.mu.Lock()
@@ -91,29 +86,9 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 			return len(dp.devices)
 		},
 		func() fyne.CanvasObject {
-			modelLabel := widget.NewLabel("")
-			modelLabel.Truncation = fyne.TextTruncateEllipsis
-			addrLabel := widget.NewLabel("")
-			addrLabel.Truncation = fyne.TextTruncateEllipsis
-			typeLabel := widget.NewLabel("")
-			typeLabel.Truncation = fyne.TextTruncateEllipsis
-			statusLabel := ttwidget.NewLabel("")
-			statusLabel.Truncation = fyne.TextTruncateEllipsis
-			return container.NewBorder(nil, nil,
-				widget.NewCheck("", nil), nil,
-				container.NewGridWithColumns(4,
-					modelLabel,
-					addrLabel,
-					typeLabel,
-					statusLabel,
-				),
-			)
+			return newDeviceRow(dp.onRowChecked)
 		},
 		func(id widget.ListItemID, item fyne.CanvasObject) {
-			row := item.(*fyne.Container)
-			check := row.Objects[1].(*widget.Check)
-			cols := row.Objects[0].(*fyne.Container)
-
 			dp.mu.Lock()
 			if id >= len(dp.devices) {
 				dp.mu.Unlock()
@@ -122,73 +97,13 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 			d := dp.devices[id]
 			isChecked := dp.checkedSerials[d.Serial]
 			connected := dp.connectedSet[d.Serial]
+			isSelected := dp.lastSelected == d.Serial
+			reconnecting := dp.reconnectingSet[d.Serial]
+			reconnectErr := dp.reconnectErrors[d.Serial]
 			dp.mu.Unlock()
 
-			cols.Objects[0].(*widget.Label).SetText(func() string {
-				if d.Model != "" {
-					return d.Model
-				}
-				return d.Serial
-			}())
-			cols.Objects[1].(*widget.Label).SetText(d.Serial)
-			cols.Objects[2].(*widget.Label).SetText(func() string {
-				if d.Source == model.SourceWireless || d.Source == model.SourceMDNS {
-					return "Wi-Fi"
-				}
-				return "USB"
-			}())
-
-			// Status priority:
-			// Connected:    Error > Launching/Mirroring > Connected
-			// Disconnected: Reconnecting > Error > Disconnected
-			status := model.StatusDisconnected
-			statusTip := ""
-			if connected {
-				status = model.StatusConnected
-				if dp.app.runner != nil {
-					switch dp.app.runner.StateFor(d.Serial) {
-					case scrcpy.StateError:
-						status = model.StatusError
-						if errMsg := dp.app.runner.LastErrorFor(d.Serial); errMsg != "" {
-							statusTip = errMsg + " (check logs)"
-						}
-					case scrcpy.StateLaunching:
-						status = model.StatusLaunching
-					case scrcpy.StateMirroring:
-						status = model.StatusMirroring
-					}
-				}
-			} else {
-				dp.mu.Lock()
-				reconnecting := dp.reconnectingSet[d.Serial]
-				reconnectErr := dp.reconnectErrors[d.Serial]
-				dp.mu.Unlock()
-				if reconnecting {
-					status = model.StatusReconnecting
-				} else if reconnectErr != "" {
-					status = model.StatusError
-					statusTip = reconnectErr + " (check logs)"
-				}
-			}
-			statusLbl := cols.Objects[3].(*ttwidget.Label)
-			statusLbl.SetText(string(status))
-			statusLbl.SetToolTip(statusTip)
-
-			serial := d.Serial
-			check.OnChanged = nil
-			check.Enable()
-			check.SetChecked(isChecked)
-			check.OnChanged = func(checked bool) {
-				dp.mu.Lock()
-				if checked {
-					dp.checkedSerials[serial] = true
-				} else {
-					delete(dp.checkedSerials, serial)
-				}
-				dp.mu.Unlock()
-				dp.syncSelectAllCheck()
-				dp.syncActionVisibility()
-			}
+			status := dp.computeStatus(d.Serial, connected, reconnecting, reconnectErr != "")
+			item.(*deviceRow).bind(d, status, isSelected, isChecked)
 		},
 	)
 
@@ -198,12 +113,30 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 		if id >= 0 && id < len(dp.devices) {
 			serial = dp.devices[id].Serial
 		}
-		changed := serial != "" && serial != dp.lastSelected
+		prevSerial := dp.lastSelected
+		changed := serial != "" && serial != prevSerial
+		prevIdx := -1
 		if changed {
 			dp.lastSelected = serial
+			if prevSerial != "" {
+				for i, d := range dp.devices {
+					if d.Serial == prevSerial {
+						prevIdx = i
+						break
+					}
+				}
+			}
 		}
 		dp.mu.Unlock()
 
+		if changed {
+			// re-bind only the two affected rows so the prior row drops its
+			// accent and the new one gains it without re-binding the list.
+			if prevIdx >= 0 {
+				dp.deviceList.RefreshItem(prevIdx)
+			}
+			dp.deviceList.RefreshItem(id)
+		}
 		if changed && dp.app.deviceInfoPanel != nil {
 			go dp.app.deviceInfoPanel.LoadDeviceInfo(serial)
 		}
@@ -214,7 +147,7 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 
 	dp.statusLabel = widget.NewLabel("")
 
-	//  Bulk action buttons (shown when 2+ devices checked)
+	//  bulk action buttons (shown when 2+ devices checked)
 	dp.mirrorBtn = ttwidget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
 		dp.app.onLaunch()
 		dp.deviceList.Refresh()
@@ -332,10 +265,11 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 			dp.clearDisconnected()
 		}),
 	)
-	moreBtn := ttwidget.NewButtonWithIcon("", theme.MoreVerticalIcon(), func() {
+	var moreBtn *ttwidget.Button
+	moreBtn = ttwidget.NewButtonWithIcon("", theme.MoreVerticalIcon(), func() {
 		c := fyne.CurrentApp().Driver().CanvasForObject(dp.deviceList)
 		widget.ShowPopUpMenuAtRelativePosition(moreMenu, c,
-			fyne.NewPos(0, refreshBtn.Size().Height), refreshBtn)
+			fyne.NewPos(0, moreBtn.Size().Height), moreBtn)
 	})
 	moreBtn.Importance = widget.LowImportance
 	moreBtn.SetToolTip("More options")
@@ -354,8 +288,7 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 	)
 
 	topSection := container.NewVBox(
-		container.NewBorder(nil, nil, nil, toolbar, dp.statusLabel),
-		headerRow,
+		container.NewBorder(nil, nil, dp.selectAllCheck, toolbar, dp.statusLabel),
 		canvas.NewLine(theme.Color(theme.ColorNameSeparator)),
 	)
 
@@ -363,6 +296,43 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 		topSection, nil, nil, nil,
 		dp.deviceList,
 	)
+}
+
+// onRowChecked is wired into each deviceRow at construction; serial is filled
+// per-bind so the same row widget can be recycled across list slots.
+func (dp *DevicePanel) onRowChecked(serial string, checked bool) {
+	dp.mu.Lock()
+	if checked {
+		dp.checkedSerials[serial] = true
+	} else {
+		delete(dp.checkedSerials, serial)
+	}
+	dp.mu.Unlock()
+	dp.syncSelectAllCheck()
+	dp.syncActionVisibility()
+}
+
+func (dp *DevicePanel) computeStatus(serial string, connected, reconnecting, hasReconnectErr bool) model.DeviceStatus {
+	if connected {
+		if dp.app.runner != nil {
+			switch dp.app.runner.StateFor(serial) {
+			case scrcpy.StateError:
+				return model.StatusError
+			case scrcpy.StateLaunching:
+				return model.StatusLaunching
+			case scrcpy.StateMirroring:
+				return model.StatusMirroring
+			}
+		}
+		return model.StatusConnected
+	}
+	if reconnecting {
+		return model.StatusReconnecting
+	}
+	if hasReconnectErr {
+		return model.StatusError
+	}
+	return model.StatusDisconnected
 }
 
 // syncSelectAllCheck updates the header "select all" checkbox to reflect

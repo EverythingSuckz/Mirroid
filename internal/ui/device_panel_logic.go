@@ -63,14 +63,23 @@ func (dp *DevicePanel) refreshDevices() {
 	}
 	for _, d := range liveDevices {
 		if idx, exists := knownBySerial[d.Serial]; exists {
-			// exact serial match and update metadata
-			dp.devices[idx].Model = d.Model
+			// exact serial match — update metadata, but don't drop a known
+			// Model/Manufacturer if a transient getprop returned empty.
+			if d.Model != "" {
+				dp.devices[idx].Model = d.Model
+			}
 			dp.devices[idx].Source = d.Source
+			if d.Manufacturer != "" {
+				dp.devices[idx].Manufacturer = d.Manufacturer
+			}
 		} else if idx, exists := knownByModel[d.Model]; d.Model != "" && exists {
 			// same model, different serial (mDNS alias changed) update the existing entry
 			oldSerial := dp.devices[idx].Serial
 			dp.devices[idx].Serial = d.Serial
 			dp.devices[idx].Source = d.Source
+			if d.Manufacturer != "" {
+				dp.devices[idx].Manufacturer = d.Manufacturer
+			}
 			// migrate serial-keyed state
 			delete(dp.connectedSet, oldSerial)
 			dp.connectedSet[d.Serial] = true
