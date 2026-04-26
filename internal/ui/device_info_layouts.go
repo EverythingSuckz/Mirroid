@@ -102,6 +102,40 @@ func (l *badgeLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	))
 }
 
+// tightVLayout stacks children vertically with a fixed (small) gap.
+// children get their MinSize.Height; layout width = max child width.
+type tightVLayout struct {
+	spacing float32
+}
+
+func (l *tightVLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	var w, h float32
+	for i, o := range objects {
+		m := o.MinSize()
+		if m.Width > w {
+			w = m.Width
+		}
+		h += m.Height
+		if i > 0 {
+			h += l.spacing
+		}
+	}
+	return fyne.NewSize(w, h)
+}
+
+func (l *tightVLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	var y float32
+	for i, o := range objects {
+		m := o.MinSize()
+		o.Resize(fyne.NewSize(size.Width, m.Height))
+		o.Move(fyne.NewPos(0, y))
+		y += m.Height
+		if i < len(objects)-1 {
+			y += l.spacing
+		}
+	}
+}
+
 type fixedSizeLayout struct {
 	width  float32
 	height float32

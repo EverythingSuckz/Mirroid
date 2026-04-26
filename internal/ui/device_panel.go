@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"image/color"
+	"strings"
 	"sync"
 
 	"fyne.io/fyne/v2"
@@ -13,8 +15,14 @@ import (
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 
 	"mirroid/internal/adb"
+	"mirroid/internal/icons"
 	"mirroid/internal/model"
 	"mirroid/internal/scrcpy"
+)
+
+const (
+	deviceRowAvatarSize float32 = 36
+	deviceRowIconSize   float32 = 18
 )
 
 // DevicePanel manages device selection via a multi-select table.
@@ -74,16 +82,6 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 		dp.syncActionVisibility()
 	})
 
-	headerRow := container.NewBorder(nil, nil,
-		dp.selectAllCheck, nil,
-		container.NewGridWithColumns(4,
-			widget.NewLabelWithStyle("Model", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-			widget.NewLabelWithStyle("Address", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-			widget.NewLabelWithStyle("Type", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-			widget.NewLabelWithStyle("Status", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		),
-	)
-
 	dp.deviceList = widget.NewList(
 		func() int {
 			dp.mu.Lock()
@@ -91,28 +89,58 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 			return len(dp.devices)
 		},
 		func() fyne.CanvasObject {
-			modelLabel := widget.NewLabel("")
-			modelLabel.Truncation = fyne.TextTruncateEllipsis
-			addrLabel := widget.NewLabel("")
-			addrLabel.Truncation = fyne.TextTruncateEllipsis
-			typeLabel := widget.NewLabel("")
-			typeLabel.Truncation = fyne.TextTruncateEllipsis
-			statusLabel := ttwidget.NewLabel("")
-			statusLabel.Truncation = fyne.TextTruncateEllipsis
-			return container.NewBorder(nil, nil,
-				widget.NewCheck("", nil), nil,
-				container.NewGridWithColumns(4,
-					modelLabel,
-					addrLabel,
-					typeLabel,
-					statusLabel,
-				),
+			check := widget.NewCheck("", nil)
+
+			// avatar color is set in the bind (green/gray per state); init to gray
+			avatarBg := canvas.NewRectangle(pillGray)
+			avatarBg.CornerRadius = deviceRowAvatarSize / 2
+			phoneIcon := canvas.NewImageFromResource(icons.NewTintedIcon(icons.SmartphoneIcon, color.White))
+			phoneIcon.SetMinSize(fyne.NewSize(deviceRowIconSize, deviceRowIconSize))
+			phoneIcon.FillMode = canvas.ImageFillContain
+			avatarSquare := container.New(
+				&fixedSizeLayout{width: deviceRowAvatarSize, height: deviceRowAvatarSize},
+				container.NewStack(avatarBg, container.NewCenter(phoneIcon)),
 			)
+			// NewCenter respects the inner MinSize so the avatar doesn't stretch
+			// to fill the row height when the row is taller than 36px.
+			avatar := container.NewCenter(avatarSquare)
+
+			nameTxt := canvas.NewText("", theme.Color(theme.ColorNameForeground))
+			nameTxt.TextStyle = fyne.TextStyle{Bold: true}
+
+			addrTxt := canvas.NewText("", theme.Color(theme.ColorNamePlaceHolder))
+			addrTxt.TextSize = theme.Size(theme.SizeNameCaptionText)
+
+			twoLine := container.New(&tightVLayout{spacing: 2}, nameTxt, addrTxt)
+
+			statusSlot := container.NewStack()
+
+			leftGap := canvas.NewRectangle(nil)
+			leftGap.SetMinSize(fyne.NewSize(theme.Padding(), 0))
+			leftCluster := container.NewHBox(check, avatar, leftGap)
+
+			rightGap := canvas.NewRectangle(nil)
+			rightGap.SetMinSize(fyne.NewSize(theme.Padding(), 0))
+			rightCluster := container.NewHBox(statusSlot, rightGap)
+
+			return container.NewPadded(container.NewBorder(nil, nil, leftCluster, rightCluster, twoLine))
 		},
 		func(id widget.ListItemID, item fyne.CanvasObject) {
-			row := item.(*fyne.Container)
-			check := row.Objects[1].(*widget.Check)
-			cols := row.Objects[0].(*fyne.Container)
+			padded := item.(*fyne.Container)
+			row := padded.Objects[0].(*fyne.Container)
+			twoLine := row.Objects[0].(*fyne.Container)
+			leftCluster := row.Objects[1].(*fyne.Container)
+			rightCluster := row.Objects[2].(*fyne.Container)
+			check := leftCluster.Objects[0].(*widget.Check)
+			avatarOuter := leftCluster.Objects[1].(*fyne.Container)
+			avatarSquare := avatarOuter.Objects[0].(*fyne.Container)
+			avatarStack := avatarSquare.Objects[0].(*fyne.Container)
+			avatarBg := avatarStack.Objects[0].(*canvas.Rectangle)
+			iconCenter := avatarStack.Objects[1].(*fyne.Container)
+			avatarIcon := iconCenter.Objects[0].(*canvas.Image)
+			nameTxt := twoLine.Objects[0].(*canvas.Text)
+			addrTxt := twoLine.Objects[1].(*canvas.Text)
+			statusSlot := rightCluster.Objects[0].(*fyne.Container)
 
 			dp.mu.Lock()
 			if id >= len(dp.devices) {
@@ -122,36 +150,59 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 			d := dp.devices[id]
 			isChecked := dp.checkedSerials[d.Serial]
 			connected := dp.connectedSet[d.Serial]
+			isSelected := dp.lastSelected == d.Serial
 			dp.mu.Unlock()
 
-			cols.Objects[0].(*widget.Label).SetText(func() string {
-				if d.Model != "" {
-					return d.Model
-				}
-				return d.Serial
-			}())
-			cols.Objects[1].(*widget.Label).SetText(d.Serial)
-			cols.Objects[2].(*widget.Label).SetText(func() string {
-				if d.Source == model.SourceWireless || d.Source == model.SourceMDNS {
-					return "Wi-Fi"
-				}
-				return "USB"
-			}())
+			if connected {
+				avatarBg.FillColor = pillGreen
+			} else {
+				avatarBg.FillColor = pillGray
+			}
+			avatarBg.Refresh()
+
+			if isSelected {
+				nameTxt.Color = theme.Color(theme.ColorNamePrimary)
+			} else {
+				nameTxt.Color = theme.Color(theme.ColorNameForeground)
+			}
+
+			displayName := d.Model
+			if displayName == "" {
+				displayName = d.Serial
+			}
+			if d.Manufacturer != "" &&
+				!strings.HasPrefix(strings.ToLower(displayName), strings.ToLower(d.Manufacturer)) {
+				displayName = d.Manufacturer + " " + displayName
+			}
+			nameTxt.Text = displayName
+			nameTxt.Refresh()
+
+			// brand logo replaces the phone icon when bundled, else fall back
+			if brand := icons.BrandIcon(d.Manufacturer); brand != nil {
+				avatarIcon.Resource = icons.NewTintedIcon(brand, color.White)
+			} else {
+				avatarIcon.Resource = icons.NewTintedIcon(icons.SmartphoneIcon, color.White)
+			}
+			avatarIcon.Refresh()
+
+			source := "USB"
+			if d.Source == model.SourceWireless || d.Source == model.SourceMDNS {
+				source = "Wi-Fi"
+			}
+			addrTxt.Color = theme.Color(theme.ColorNamePlaceHolder)
+			addrTxt.Text = d.Serial + "  ·  " + source
+			addrTxt.Refresh()
 
 			// Status priority:
 			// Connected:    Error > Launching/Mirroring > Connected
 			// Disconnected: Reconnecting > Error > Disconnected
 			status := model.StatusDisconnected
-			statusTip := ""
 			if connected {
 				status = model.StatusConnected
 				if dp.app.runner != nil {
 					switch dp.app.runner.StateFor(d.Serial) {
 					case scrcpy.StateError:
 						status = model.StatusError
-						if errMsg := dp.app.runner.LastErrorFor(d.Serial); errMsg != "" {
-							statusTip = errMsg + " (check logs)"
-						}
 					case scrcpy.StateLaunching:
 						status = model.StatusLaunching
 					case scrcpy.StateMirroring:
@@ -167,12 +218,12 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 					status = model.StatusReconnecting
 				} else if reconnectErr != "" {
 					status = model.StatusError
-					statusTip = reconnectErr + " (check logs)"
 				}
 			}
-			statusLbl := cols.Objects[3].(*ttwidget.Label)
-			statusLbl.SetText(string(status))
-			statusLbl.SetToolTip(statusTip)
+			statusSlot.Objects = []fyne.CanvasObject{
+				buildStatusBadge("● "+string(status), statusColor(status)),
+			}
+			statusSlot.Refresh()
 
 			serial := d.Serial
 			check.OnChanged = nil
@@ -204,6 +255,9 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 		}
 		dp.mu.Unlock()
 
+		if changed {
+			dp.deviceList.Refresh() // re-bind so prior row drops accent and new row gains it
+		}
 		if changed && dp.app.deviceInfoPanel != nil {
 			go dp.app.deviceInfoPanel.LoadDeviceInfo(serial)
 		}
@@ -214,7 +268,7 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 
 	dp.statusLabel = widget.NewLabel("")
 
-	//  Bulk action buttons (shown when 2+ devices checked)
+	//  bulk action buttons (shown when 2+ devices checked)
 	dp.mirrorBtn = ttwidget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
 		dp.app.onLaunch()
 		dp.deviceList.Refresh()
@@ -332,10 +386,11 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 			dp.clearDisconnected()
 		}),
 	)
-	moreBtn := ttwidget.NewButtonWithIcon("", theme.MoreVerticalIcon(), func() {
+	var moreBtn *ttwidget.Button
+	moreBtn = ttwidget.NewButtonWithIcon("", theme.MoreVerticalIcon(), func() {
 		c := fyne.CurrentApp().Driver().CanvasForObject(dp.deviceList)
 		widget.ShowPopUpMenuAtRelativePosition(moreMenu, c,
-			fyne.NewPos(0, refreshBtn.Size().Height), refreshBtn)
+			fyne.NewPos(0, moreBtn.Size().Height), moreBtn)
 	})
 	moreBtn.Importance = widget.LowImportance
 	moreBtn.SetToolTip("More options")
@@ -354,8 +409,7 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 	)
 
 	topSection := container.NewVBox(
-		container.NewBorder(nil, nil, nil, toolbar, dp.statusLabel),
-		headerRow,
+		container.NewBorder(nil, nil, dp.selectAllCheck, toolbar, dp.statusLabel),
 		canvas.NewLine(theme.Color(theme.ColorNameSeparator)),
 	)
 

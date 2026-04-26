@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"log"
 	"strconv"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -24,6 +25,7 @@ import (
 var (
 	pillGreen = color.NRGBA{R: 76, G: 175, B: 80, A: 255}
 	pillTeal  = color.NRGBA{R: 38, G: 166, B: 154, A: 255}
+	pillBlue  = color.NRGBA{R: 33, G: 150, B: 243, A: 255}
 	pillRed   = color.NRGBA{R: 239, G: 83, B: 80, A: 255}
 	pillGray  = color.NRGBA{R: 158, G: 158, B: 158, A: 255}
 )
@@ -69,8 +71,10 @@ type infoView struct {
 	serial string
 	root   fyne.CanvasObject
 
-	heroName    *widget.Label
+	heroName    *styledText
 	heroAddress *styledText
+	heroIcon    *canvas.Image
+	heroIconBg  *avatarBg
 
 	batteryHeading *styledText
 	batteryBar     *fyne.Container
@@ -261,9 +265,11 @@ func (dip *DeviceInfoPanel) deviceDisplayName(serial string) string {
 func (dip *DeviceInfoPanel) newInfoView(serial string, info adb.DeviceInfo) *infoView {
 	v := &infoView{serial: serial}
 
-	heroHeader, heroName, heroAddress := buildHeroHeader()
+	heroHeader, heroName, heroAddress, heroIcon, heroIconBg := buildHeroHeader()
 	v.heroName = heroName
 	v.heroAddress = heroAddress
+	v.heroIcon = heroIcon
+	v.heroIconBg = heroIconBg
 
 	v.refreshBtn = ttwidget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() {
 		go dip.LoadDeviceInfo(serial)
@@ -416,8 +422,25 @@ func (dip *DeviceInfoPanel) newInfoView(serial string, info adb.DeviceInfo) *inf
 
 func (v *infoView) apply(info adb.DeviceInfo) {
 	v.currentDeviceID = info.DeviceID
-	v.heroName.SetText(fmt.Sprintf("%s %s", info.Manufacturer, info.Model))
-	v.heroAddress.Set(info.Serial)
+	v.heroName.Set(fmt.Sprintf("%s %s", info.Manufacturer, info.Model))
+	connType := "USB"
+	if strings.Contains(v.serial, ":") {
+		connType = "Wi-Fi"
+	}
+	v.heroAddress.Set(info.Serial + "  ·  " + connType)
+
+	brandRes := icons.BrandIcon(info.Manufacturer)
+	brandClr, hasBrandClr := icons.BrandColor(info.Manufacturer)
+	if brandRes != nil && hasBrandClr {
+		// avatarBg picks the actual gray shade from theme + brand luminance
+		v.heroIconBg.SetBrand(brandClr)
+		v.heroIcon.Resource = icons.NewTintedIcon(brandRes, brandClr)
+	} else {
+		// no brand match — fall back to the connected-state green + white phone
+		v.heroIconBg.SetBrand(nil)
+		v.heroIcon.Resource = icons.NewTintedIcon(icons.SmartphoneIcon, color.White)
+	}
+	v.heroIcon.Refresh()
 
 	batteryDisplay := "-"
 	if info.BatteryPct >= 0 {
