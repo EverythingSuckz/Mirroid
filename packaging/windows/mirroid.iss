@@ -32,6 +32,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 PrivilegesRequired=admin
 MinVersion=10.0
+CloseApplications=force
+RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -59,6 +61,24 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  AdbPath: String;
+  ResultCode: Integer;
+begin
+  Result := '';
+  AdbPath := ExpandConstant('{app}\adb.exe');
+  if FileExists(AdbPath) then begin
+    // graceful shutdown of the adb daemon so connected devices get cleaned up
+    Exec(AdbPath, 'kill-server', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+  // any leftover adb/scrcpy with the exe still mapped will block InstallDelete
+  // and trigger a rollback — RestartManager misses background daemons
+  Exec('taskkill.exe', '/F /IM adb.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM scrcpy.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(500);
+end;
+
 procedure ArtCreditClick(Sender: TObject);
 var
   ErrorCode: Integer;
