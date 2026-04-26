@@ -115,7 +115,7 @@ func (a *App) checkForUpdates(silent bool) {
 	go func() {
 		result, err := u.CheckForUpdate()
 		if err != nil {
-			slog.Debug("silent update check failed", "error", err)
+			slog.Warn("silent update check failed", "error", err)
 			return
 		}
 		// save timestamp only on successful check
