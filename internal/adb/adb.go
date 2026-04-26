@@ -7,6 +7,7 @@ import (
 	"net"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"mirroid/internal/model"
@@ -20,9 +21,10 @@ const (
 
 // Device represents a connected Android device.
 type Device struct {
-	Serial string `json:"serial"`
-	Model  string `json:"model"`
-	Source string `json:"source"` // "usb", "wireless", "mdns"
+	Serial       string `json:"serial"`
+	Model        string `json:"model"`
+	Manufacturer string `json:"manufacturer,omitempty"`
+	Source       string `json:"source"` // "usb", "wireless", "mdns"
 }
 
 // String returns a display-friendly label.
@@ -134,7 +136,42 @@ func (c *Client) GetDevices() ([]Device, error) {
 			result = append(result, d)
 		}
 	}
+
+	// fetch manufacturer + model per device in parallel; tolerate failures
+	c.fillDeviceProperties(result)
+
 	return result, nil
+}
+
+// fillDeviceProperties populates the Manufacturer field and refreshes Model
+// for each device via getprop. Prefers the getprop model
+func (c *Client) fillDeviceProperties(devices []Device) {
+	var wg sync.WaitGroup
+	for i := range devices {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), adbTimeout)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, c.adbPath, "-s", devices[idx].Serial, "shell",
+				"getprop ro.product.manufacturer; getprop ro.product.model")
+			platform.HideConsole(cmd)
+			out, err := cmd.Output()
+			if err != nil {
+				return
+			}
+			lines := strings.Split(strings.TrimRight(string(out), "\r\n"), "\n")
+			if len(lines) >= 1 {
+				devices[idx].Manufacturer = strings.TrimSpace(lines[0])
+			}
+			if len(lines) >= 2 {
+				if m := strings.TrimSpace(lines[1]); m != "" {
+					devices[idx].Model = m
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
 }
 
 // Pair runs `adb pair <addr> <password>`.

@@ -14,8 +14,42 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
-//go:embed svg/*.svg
+//go:embed svg/*.svg svg/brands/*.svg
 var svgFS embed.FS
+
+var brandAliases = map[string]string{
+	"google llc":                   "google",
+	"samsung electronics":          "samsung",
+	"xiaomi communications co ltd": "xiaomi",
+	"redmi":                        "xiaomi",
+	"poco":                         "xiaomi",
+	"oneplus technology":           "oneplus",
+	"motorola mobility":            "motorola",
+	"hmd global":                   "nokia",
+}
+
+func BrandIcon(manufacturer string) fyne.Resource {
+	key := strings.ToLower(strings.TrimSpace(manufacturer))
+	if key == "" {
+		return nil
+	}
+	if alias, ok := brandAliases[key]; ok {
+		key = alias
+	}
+	// strip non-letter chars so "OnePlus Inc." → "oneplusinc" → fall through
+	// to prefix match below if direct file isn't present.
+	b, err := svgFS.ReadFile("svg/brands/" + key + ".svg")
+	if err != nil {
+		// try first word as a fallback (e.g. "Xiaomi Communications Co Ltd")
+		if i := strings.IndexAny(key, " ,."); i > 0 {
+			b, err = svgFS.ReadFile("svg/brands/" + key[:i] + ".svg")
+		}
+		if err != nil {
+			return nil
+		}
+	}
+	return &fyne.StaticResource{StaticName: "brand-" + key + ".svg", StaticContent: b}
+}
 
 func mustLoad(name string) *fyne.StaticResource {
 	b, err := svgFS.ReadFile("svg/" + name)
