@@ -190,10 +190,17 @@ func batteryStatusColor(status adb.BatteryStatus) color.Color {
 	}
 }
 
-// buildHeroHeader returns the connected-device hero block plus refs to the
-// dynamic name + address + icon + icon-bg widgets so they can be updated
-// in place on refresh.
-func buildHeroHeader() (fyne.CanvasObject, *styledText, *styledText, *canvas.Image, *avatarBg) {
+// heroHeader bundles the hero block root with refs to its dynamic widgets so
+// callers can update text/icon in place on refresh.
+type heroHeader struct {
+	Root    fyne.CanvasObject
+	Name    *styledText
+	Address *styledText
+	Icon    *canvas.Image
+	IconBg  *avatarBg
+}
+
+func buildHeroHeader() heroHeader {
 	iconBg := newAvatarBg(cardRadius, pillGreen)
 	heroIcon := canvas.NewImageFromResource(icons.NewTintedIcon(icons.SmartphoneIcon, color.White))
 	heroIcon.SetMinSize(fyne.NewSize(heroIconLarge, heroIconLarge))
@@ -225,7 +232,13 @@ func buildHeroHeader() (fyne.CanvasObject, *styledText, *styledText, *canvas.Ima
 	gap := canvas.NewRectangle(color.Transparent)
 	gap.SetMinSize(fyne.NewSize(theme.Padding(), 0))
 	iconWithGap := container.NewHBox(iconWrapper, gap)
-	return container.NewBorder(nil, nil, iconWithGap, nil, rightSide), name, address, heroIcon, iconBg
+	return heroHeader{
+		Root:    container.NewBorder(nil, nil, iconWithGap, nil, rightSide),
+		Name:    name,
+		Address: address,
+		Icon:    heroIcon,
+		IconBg:  iconBg,
+	}
 }
 
 func buildSmallHero(name, badgeText string, accent color.Color) fyne.CanvasObject {

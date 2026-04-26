@@ -2,8 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"image/color"
-	"strings"
 	"sync"
 
 	"fyne.io/fyne/v2"
@@ -15,7 +13,6 @@ import (
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 
 	"mirroid/internal/adb"
-	"mirroid/internal/icons"
 	"mirroid/internal/model"
 	"mirroid/internal/scrcpy"
 )
@@ -89,59 +86,9 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 			return len(dp.devices)
 		},
 		func() fyne.CanvasObject {
-			check := widget.NewCheck("", nil)
-
-			// avatar color is set in the bind (green/gray per state); init to gray
-			avatarBg := canvas.NewRectangle(pillGray)
-			avatarBg.CornerRadius = deviceRowAvatarSize / 2
-			phoneIcon := canvas.NewImageFromResource(icons.NewTintedIcon(icons.SmartphoneIcon, color.White))
-			phoneIcon.SetMinSize(fyne.NewSize(deviceRowIconSize, deviceRowIconSize))
-			phoneIcon.FillMode = canvas.ImageFillContain
-			avatarSquare := container.New(
-				&fixedSizeLayout{width: deviceRowAvatarSize, height: deviceRowAvatarSize},
-				container.NewStack(avatarBg, container.NewCenter(phoneIcon)),
-			)
-			// NewCenter respects the inner MinSize so the avatar doesn't stretch
-			// to fill the row height when the row is taller than 36px.
-			avatar := container.NewCenter(avatarSquare)
-
-			nameTxt := canvas.NewText("", theme.Color(theme.ColorNameForeground))
-			nameTxt.TextStyle = fyne.TextStyle{Bold: true}
-
-			addrTxt := canvas.NewText("", theme.Color(theme.ColorNamePlaceHolder))
-			addrTxt.TextSize = theme.Size(theme.SizeNameCaptionText)
-
-			twoLine := container.New(&tightVLayout{spacing: 2}, nameTxt, addrTxt)
-
-			statusSlot := container.NewStack()
-
-			leftGap := canvas.NewRectangle(nil)
-			leftGap.SetMinSize(fyne.NewSize(theme.Padding(), 0))
-			leftCluster := container.NewHBox(check, avatar, leftGap)
-
-			rightGap := canvas.NewRectangle(nil)
-			rightGap.SetMinSize(fyne.NewSize(theme.Padding(), 0))
-			rightCluster := container.NewHBox(statusSlot, rightGap)
-
-			return container.NewPadded(container.NewBorder(nil, nil, leftCluster, rightCluster, twoLine))
+			return newDeviceRow(dp.onRowChecked)
 		},
 		func(id widget.ListItemID, item fyne.CanvasObject) {
-			padded := item.(*fyne.Container)
-			row := padded.Objects[0].(*fyne.Container)
-			twoLine := row.Objects[0].(*fyne.Container)
-			leftCluster := row.Objects[1].(*fyne.Container)
-			rightCluster := row.Objects[2].(*fyne.Container)
-			check := leftCluster.Objects[0].(*widget.Check)
-			avatarOuter := leftCluster.Objects[1].(*fyne.Container)
-			avatarSquare := avatarOuter.Objects[0].(*fyne.Container)
-			avatarStack := avatarSquare.Objects[0].(*fyne.Container)
-			avatarBg := avatarStack.Objects[0].(*canvas.Rectangle)
-			iconCenter := avatarStack.Objects[1].(*fyne.Container)
-			avatarIcon := iconCenter.Objects[0].(*canvas.Image)
-			nameTxt := twoLine.Objects[0].(*canvas.Text)
-			addrTxt := twoLine.Objects[1].(*canvas.Text)
-			statusSlot := rightCluster.Objects[0].(*fyne.Container)
-
 			dp.mu.Lock()
 			if id >= len(dp.devices) {
 				dp.mu.Unlock()
@@ -151,88 +98,12 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 			isChecked := dp.checkedSerials[d.Serial]
 			connected := dp.connectedSet[d.Serial]
 			isSelected := dp.lastSelected == d.Serial
+			reconnecting := dp.reconnectingSet[d.Serial]
+			reconnectErr := dp.reconnectErrors[d.Serial]
 			dp.mu.Unlock()
 
-			// compute status first so the avatar bg can reflect the actual state
-			// (connected vs. mirroring vs. error etc.), not just connected/not.
-			status := model.StatusDisconnected
-			if connected {
-				status = model.StatusConnected
-				if dp.app.runner != nil {
-					switch dp.app.runner.StateFor(d.Serial) {
-					case scrcpy.StateError:
-						status = model.StatusError
-					case scrcpy.StateLaunching:
-						status = model.StatusLaunching
-					case scrcpy.StateMirroring:
-						status = model.StatusMirroring
-					}
-				}
-			} else {
-				dp.mu.Lock()
-				reconnecting := dp.reconnectingSet[d.Serial]
-				reconnectErr := dp.reconnectErrors[d.Serial]
-				dp.mu.Unlock()
-				if reconnecting {
-					status = model.StatusReconnecting
-				} else if reconnectErr != "" {
-					status = model.StatusError
-				}
-			}
-			pillBg := statusColor(status)
-
-			avatarBg.FillColor = pillBg
-			avatarBg.Refresh()
-
-			if isSelected {
-				nameTxt.Color = theme.Color(theme.ColorNamePrimary)
-			} else {
-				nameTxt.Color = theme.Color(theme.ColorNameForeground)
-			}
-
-			displayName := d.Model
-			if displayName == "" {
-				displayName = d.Serial
-			}
-			if d.Manufacturer != "" &&
-				!strings.HasPrefix(strings.ToLower(displayName), strings.ToLower(d.Manufacturer)) {
-				displayName = d.Manufacturer + " " + displayName
-			}
-			nameTxt.Text = displayName
-			nameTxt.Refresh()
-
-			// brand logo replaces the phone icon when bundled, else fall back
-			if brand := icons.BrandIcon(d.Manufacturer); brand != nil {
-				avatarIcon.Resource = icons.NewTintedIcon(brand, color.White)
-			} else {
-				avatarIcon.Resource = icons.NewTintedIcon(icons.SmartphoneIcon, color.White)
-			}
-			avatarIcon.Refresh()
-
-			addrTxt.Color = theme.Color(theme.ColorNamePlaceHolder)
-			addrTxt.Text = d.Serial + "  ·  " + connTypeLabel(d.Serial)
-			addrTxt.Refresh()
-
-			statusSlot.Objects = []fyne.CanvasObject{
-				buildStatusBadge("● "+string(status), pillBg),
-			}
-			statusSlot.Refresh()
-
-			serial := d.Serial
-			check.OnChanged = nil
-			check.Enable()
-			check.SetChecked(isChecked)
-			check.OnChanged = func(checked bool) {
-				dp.mu.Lock()
-				if checked {
-					dp.checkedSerials[serial] = true
-				} else {
-					delete(dp.checkedSerials, serial)
-				}
-				dp.mu.Unlock()
-				dp.syncSelectAllCheck()
-				dp.syncActionVisibility()
-			}
+			status := dp.computeStatus(d.Serial, connected, reconnecting, reconnectErr != "")
+			item.(*deviceRow).bind(d, status, isSelected, isChecked)
 		},
 	)
 
@@ -410,6 +281,43 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 		topSection, nil, nil, nil,
 		dp.deviceList,
 	)
+}
+
+// onRowChecked is wired into each deviceRow at construction; serial is filled
+// per-bind so the same row widget can be recycled across list slots.
+func (dp *DevicePanel) onRowChecked(serial string, checked bool) {
+	dp.mu.Lock()
+	if checked {
+		dp.checkedSerials[serial] = true
+	} else {
+		delete(dp.checkedSerials, serial)
+	}
+	dp.mu.Unlock()
+	dp.syncSelectAllCheck()
+	dp.syncActionVisibility()
+}
+
+func (dp *DevicePanel) computeStatus(serial string, connected, reconnecting, hasReconnectErr bool) model.DeviceStatus {
+	if connected {
+		if dp.app.runner != nil {
+			switch dp.app.runner.StateFor(serial) {
+			case scrcpy.StateError:
+				return model.StatusError
+			case scrcpy.StateLaunching:
+				return model.StatusLaunching
+			case scrcpy.StateMirroring:
+				return model.StatusMirroring
+			}
+		}
+		return model.StatusConnected
+	}
+	if reconnecting {
+		return model.StatusReconnecting
+	}
+	if hasReconnectErr {
+		return model.StatusError
+	}
+	return model.StatusDisconnected
 }
 
 // syncSelectAllCheck updates the header "select all" checkbox to reflect

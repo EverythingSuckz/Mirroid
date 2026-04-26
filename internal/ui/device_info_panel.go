@@ -264,11 +264,11 @@ func (dip *DeviceInfoPanel) deviceDisplayName(serial string) string {
 func (dip *DeviceInfoPanel) newInfoView(serial string, info adb.DeviceInfo) *infoView {
 	v := &infoView{serial: serial}
 
-	heroHeader, heroName, heroAddress, heroIcon, heroIconBg := buildHeroHeader()
-	v.heroName = heroName
-	v.heroAddress = heroAddress
-	v.heroIcon = heroIcon
-	v.heroIconBg = heroIconBg
+	hero := buildHeroHeader()
+	v.heroName = hero.Name
+	v.heroAddress = hero.Address
+	v.heroIcon = hero.Icon
+	v.heroIconBg = hero.IconBg
 
 	v.refreshBtn = ttwidget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() {
 		go dip.LoadDeviceInfo(serial)
@@ -284,7 +284,7 @@ func (dip *DeviceInfoPanel) newInfoView(serial string, info adb.DeviceInfo) *inf
 	refreshSlot := container.NewStack(v.refreshBtn, spinSlot)
 
 	stickyTop := container.NewVBox(
-		container.NewBorder(nil, nil, nil, refreshSlot, container.NewPadded(heroHeader)),
+		container.NewBorder(nil, nil, nil, refreshSlot, container.NewPadded(hero.Root)),
 		widget.NewSeparator(),
 	)
 
