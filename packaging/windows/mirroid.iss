@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "0.0.4"
+  #define MyAppVersion "0.0.5"
 #endif
 
 #define MyAppName "Mirroid"
