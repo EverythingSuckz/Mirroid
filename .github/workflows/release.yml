@@ -187,7 +187,7 @@ jobs:
         if: matrix.target == 'darwin'
         shell: bash
         run: |
-          cp _bundled/* Mirroid.app/Contents/MacOS/
+          cp _bundled/adb _bundled/scrcpy _bundled/scrcpy-server Mirroid.app/Contents/MacOS/
           chmod +x Mirroid.app/Contents/MacOS/adb Mirroid.app/Contents/MacOS/scrcpy
 
       - name: Ad-hoc codesign app bundle (macOS)
