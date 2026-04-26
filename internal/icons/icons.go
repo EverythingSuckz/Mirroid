@@ -28,19 +28,18 @@ var brandAliases = map[string]string{
 	"hmd global":                   "nokia",
 }
 
+// BrandIcon returns the bundled brand SVG for the given manufacturer, or nil
+// when no logo is bundled. Lookup is lowercased + trimmed; alias map handles
+// sub-brands (Redmi → xiaomi); a first-word fallback handles corporate
+// suffixes ("Xiaomi Communications Co Ltd" → xiaomi).
 func BrandIcon(manufacturer string) fyne.Resource {
-	key := strings.ToLower(strings.TrimSpace(manufacturer))
+	key := resolveBrandKey(manufacturer)
 	if key == "" {
 		return nil
 	}
-	if alias, ok := brandAliases[key]; ok {
-		key = alias
-	}
-	// strip non-letter chars so "OnePlus Inc." → "oneplusinc" → fall through
-	// to prefix match below if direct file isn't present.
 	b, err := svgFS.ReadFile("svg/brands/" + key + ".svg")
 	if err != nil {
-		// try first word as a fallback (e.g. "Xiaomi Communications Co Ltd")
+		// fall back to first whitespace-separated token
 		if i := strings.IndexAny(key, " ,."); i > 0 {
 			b, err = svgFS.ReadFile("svg/brands/" + key[:i] + ".svg")
 		}
@@ -49,6 +48,19 @@ func BrandIcon(manufacturer string) fyne.Resource {
 		}
 	}
 	return &fyne.StaticResource{StaticName: "brand-" + key + ".svg", StaticContent: b}
+}
+
+// resolveBrandKey normalizes a manufacturer string to its brand-icon lookup
+// key (lowercased, trimmed, alias-mapped). Returns "" for empty input.
+func resolveBrandKey(manufacturer string) string {
+	key := strings.ToLower(strings.TrimSpace(manufacturer))
+	if key == "" {
+		return ""
+	}
+	if alias, ok := brandAliases[key]; ok {
+		return alias
+	}
+	return key
 }
 
 func mustLoad(name string) *fyne.StaticResource {
@@ -96,16 +108,33 @@ func NewThemedIcon(res fyne.Resource) fyne.Resource {
 	return &themedStrokeResource{src: res}
 }
 
-// NewTintedIcon substitutes `currentColor` once at construction; use NewThemedIcon when the color should follow the theme.
-// the tint hex is embedded in the resource name so each tinted variant has a
-// unique key in fyne's name-based svg cache.
+var (
+	tintedMu    sync.Mutex
+	tintedCache = make(map[string]*fyne.StaticResource)
+)
+
+// NewTintedIcon substitutes `currentColor` once at construction. Use
+// NewThemedIcon when the color should follow the active theme. Resources are
+// cached per (source name, tint hex) so repeated calls in list bind callbacks
+// don't re-allocate.
 func NewTintedIcon(res fyne.Resource, c color.Color) fyne.Resource {
 	hex := colorToHex(c)
-	content := strings.ReplaceAll(string(res.Content()), "currentColor", hex)
-	return &fyne.StaticResource{
-		StaticName:    res.Name() + "@" + hex,
-		StaticContent: []byte(content),
+	key := res.Name() + "@" + hex
+
+	tintedMu.Lock()
+	if cached, ok := tintedCache[key]; ok {
+		tintedMu.Unlock()
+		return cached
 	}
+	tintedMu.Unlock()
+
+	content := strings.ReplaceAll(string(res.Content()), "currentColor", hex)
+	out := &fyne.StaticResource{StaticName: key, StaticContent: []byte(content)}
+
+	tintedMu.Lock()
+	tintedCache[key] = out
+	tintedMu.Unlock()
+	return out
 }
 
 func colorToHex(c color.Color) string {

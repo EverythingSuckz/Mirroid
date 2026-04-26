@@ -2,7 +2,6 @@ package icons
 
 import (
 	"image/color"
-	"math"
 	"strings"
 )
 
@@ -25,13 +24,12 @@ var brandColors = map[string]color.NRGBA{
 	"nothing":  {R: 0x00, G: 0x00, B: 0x00, A: 0xff},
 }
 
+// BrandColor returns the official brand color for the given manufacturer, or
+// (nil, false) if no color is bundled. Lookup matches BrandIcon's rules.
 func BrandColor(manufacturer string) (color.Color, bool) {
-	key := strings.ToLower(strings.TrimSpace(manufacturer))
+	key := resolveBrandKey(manufacturer)
 	if key == "" {
 		return nil, false
-	}
-	if alias, ok := brandAliases[key]; ok {
-		key = alias
 	}
 	if c, ok := brandColors[key]; ok {
 		return c, true
@@ -44,26 +42,22 @@ func BrandColor(manufacturer string) (color.Color, bool) {
 	return nil, false
 }
 
-// reports whether two colors differ enough in luminance to be
-// visually distinguishable when one is rendered on top of the other.
-// Threshold is 0.35
-func HasContrast(fg, bg color.Color) bool {
-	return math.Abs(relativeLuminance(fg)-relativeLuminance(bg)) > 0.35
-}
-
-// reports whether a color's relative luminance is high enough that it would disappear against a white background
+// IsLightColor reports whether a color's perceived brightness is high enough
+// that it would disappear against a white background (e.g., Sony's white).
 func IsLightColor(c color.Color) bool {
 	return relativeLuminance(c) > 0.85
 }
 
-// reports whether a color's relative luminance is low enough that it would disappear against a dark-gray background
+// IsDarkColor reports whether a color's perceived brightness is low enough
+// that it would disappear against a dark-gray background (e.g., Honor's black).
 func IsDarkColor(c color.Color) bool {
 	return relativeLuminance(c) < 0.05
 }
 
-// reports whether the given background color is dark enough to warrant the dark-theme treatment
-func IsDarkTheme(bg color.Color) bool {
-	return relativeLuminance(bg) < 0.5
+// IsDarkBackground reports whether the given color is dark enough to warrant
+// dark-theme treatment. Threshold (0.5) tuned for the default Fyne themes.
+func IsDarkBackground(c color.Color) bool {
+	return relativeLuminance(c) < 0.5
 }
 
 func relativeLuminance(c color.Color) float64 {

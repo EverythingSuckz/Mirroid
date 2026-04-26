@@ -169,6 +169,16 @@ func buildInfoPill(icon fyne.Resource, text string, pillColor color.Color) fyne.
 	return container.New(&badgeLayout{padX: pillPadX, padY: badgePadY}, bg, row)
 }
 
+// connTypeLabel returns "Wi-Fi" or "USB" based on whether the serial looks
+// like an IP:port wireless target. Used by both the device list and the side
+// panel hero so the two surfaces stay consistent.
+func connTypeLabel(serial string) string {
+	if strings.Contains(serial, ":") {
+		return "Wi-Fi"
+	}
+	return "USB"
+}
+
 func batteryStatusColor(status adb.BatteryStatus) color.Color {
 	switch status {
 	case adb.BatteryStatusCharging, adb.BatteryStatusFull:
@@ -204,10 +214,10 @@ func buildHeroHeader() (fyne.CanvasObject, *styledText, *styledText, *canvas.Ima
 	})
 
 	connectedBadge := buildStatusBadge("● Connected", pillGreen)
-	// transparent spacer matches the RichText internal left padding so the
-	// pill's bg edge lines up with the text edges of the rows above/below
+	// transparent spacer matches RichText's internal left padding (which uses
+	// SizeNameInnerPadding) so the pill's bg edge aligns with the text rows above and below.
 	badgeLeftPad := canvas.NewRectangle(color.Transparent)
-	badgeLeftPad.SetMinSize(fyne.NewSize(theme.Padding(), 0))
+	badgeLeftPad.SetMinSize(fyne.NewSize(theme.Size(theme.SizeNameInnerPadding), 0))
 	badgeRow := container.NewHBox(badgeLeftPad, connectedBadge)
 
 	rightSide := container.NewVBox(name.rt, badgeRow, address.rt)

@@ -52,7 +52,7 @@ func (a *avatarBg) resolve() color.Color {
 	if icons.IsDarkColor(a.brand) {
 		return avatarBgLight
 	}
-	if icons.IsDarkTheme(theme.Color(theme.ColorNameBackground)) {
+	if icons.IsDarkBackground(theme.Color(theme.ColorNameBackground)) {
 		return avatarBgDark
 	}
 	return avatarBgLight

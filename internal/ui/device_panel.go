@@ -153,11 +153,35 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 			isSelected := dp.lastSelected == d.Serial
 			dp.mu.Unlock()
 
+			// compute status first so the avatar bg can reflect the actual state
+			// (connected vs. mirroring vs. error etc.), not just connected/not.
+			status := model.StatusDisconnected
 			if connected {
-				avatarBg.FillColor = pillGreen
+				status = model.StatusConnected
+				if dp.app.runner != nil {
+					switch dp.app.runner.StateFor(d.Serial) {
+					case scrcpy.StateError:
+						status = model.StatusError
+					case scrcpy.StateLaunching:
+						status = model.StatusLaunching
+					case scrcpy.StateMirroring:
+						status = model.StatusMirroring
+					}
+				}
 			} else {
-				avatarBg.FillColor = pillGray
+				dp.mu.Lock()
+				reconnecting := dp.reconnectingSet[d.Serial]
+				reconnectErr := dp.reconnectErrors[d.Serial]
+				dp.mu.Unlock()
+				if reconnecting {
+					status = model.StatusReconnecting
+				} else if reconnectErr != "" {
+					status = model.StatusError
+				}
 			}
+			pillBg := statusColor(status)
+
+			avatarBg.FillColor = pillBg
 			avatarBg.Refresh()
 
 			if isSelected {
@@ -185,43 +209,12 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 			}
 			avatarIcon.Refresh()
 
-			source := "USB"
-			if d.Source == model.SourceWireless || d.Source == model.SourceMDNS {
-				source = "Wi-Fi"
-			}
 			addrTxt.Color = theme.Color(theme.ColorNamePlaceHolder)
-			addrTxt.Text = d.Serial + "  ·  " + source
+			addrTxt.Text = d.Serial + "  ·  " + connTypeLabel(d.Serial)
 			addrTxt.Refresh()
 
-			// Status priority:
-			// Connected:    Error > Launching/Mirroring > Connected
-			// Disconnected: Reconnecting > Error > Disconnected
-			status := model.StatusDisconnected
-			if connected {
-				status = model.StatusConnected
-				if dp.app.runner != nil {
-					switch dp.app.runner.StateFor(d.Serial) {
-					case scrcpy.StateError:
-						status = model.StatusError
-					case scrcpy.StateLaunching:
-						status = model.StatusLaunching
-					case scrcpy.StateMirroring:
-						status = model.StatusMirroring
-					}
-				}
-			} else {
-				dp.mu.Lock()
-				reconnecting := dp.reconnectingSet[d.Serial]
-				reconnectErr := dp.reconnectErrors[d.Serial]
-				dp.mu.Unlock()
-				if reconnecting {
-					status = model.StatusReconnecting
-				} else if reconnectErr != "" {
-					status = model.StatusError
-				}
-			}
 			statusSlot.Objects = []fyne.CanvasObject{
-				buildStatusBadge("● "+string(status), statusColor(status)),
+				buildStatusBadge("● "+string(status), pillBg),
 			}
 			statusSlot.Refresh()
 

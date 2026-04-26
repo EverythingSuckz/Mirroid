@@ -7,7 +7,6 @@ import (
 	"image/color"
 	"log"
 	"strconv"
-	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -423,11 +422,7 @@ func (dip *DeviceInfoPanel) newInfoView(serial string, info adb.DeviceInfo) *inf
 func (v *infoView) apply(info adb.DeviceInfo) {
 	v.currentDeviceID = info.DeviceID
 	v.heroName.Set(fmt.Sprintf("%s %s", info.Manufacturer, info.Model))
-	connType := "USB"
-	if strings.Contains(v.serial, ":") {
-		connType = "Wi-Fi"
-	}
-	v.heroAddress.Set(info.Serial + "  ·  " + connType)
+	v.heroAddress.Set(info.Serial + "  ·  " + connTypeLabel(v.serial))
 
 	brandRes := icons.BrandIcon(info.Manufacturer)
 	brandClr, hasBrandClr := icons.BrandColor(info.Manufacturer)
