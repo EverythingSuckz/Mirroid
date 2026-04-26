@@ -28,26 +28,20 @@ var brandAliases = map[string]string{
 	"hmd global":                   "nokia",
 }
 
-// BrandIcon returns the bundled brand SVG for the given manufacturer, or nil
-// when no logo is bundled. Lookup is lowercased + trimmed; alias map handles
-// sub-brands (Redmi → xiaomi); a first-word fallback handles corporate
-// suffixes ("Xiaomi Communications Co Ltd" → xiaomi).
 func BrandIcon(manufacturer string) fyne.Resource {
 	key := resolveBrandKey(manufacturer)
 	if key == "" {
 		return nil
 	}
-	b, err := svgFS.ReadFile("svg/brands/" + key + ".svg")
-	if err != nil {
-		// fall back to first whitespace-separated token
-		if i := strings.IndexAny(key, " ,."); i > 0 {
-			b, err = svgFS.ReadFile("svg/brands/" + key[:i] + ".svg")
-		}
-		if err != nil {
-			return nil
+	if b, err := svgFS.ReadFile("svg/brands/" + key + ".svg"); err == nil {
+		return &fyne.StaticResource{StaticName: "brand-" + key + ".svg", StaticContent: b}
+	}
+	if alt := firstTokenKey(key); alt != "" {
+		if b, err := svgFS.ReadFile("svg/brands/" + alt + ".svg"); err == nil {
+			return &fyne.StaticResource{StaticName: "brand-" + alt + ".svg", StaticContent: b}
 		}
 	}
-	return &fyne.StaticResource{StaticName: "brand-" + key + ".svg", StaticContent: b}
+	return nil
 }
 
 // resolveBrandKey normalizes a manufacturer string to its brand-icon lookup

@@ -200,6 +200,9 @@ func (c *Client) fillDeviceProperties(devices []Device) {
 			}
 			if len(lines) > 1 {
 				mdl = strings.TrimSpace(lines[1])
+				if strings.EqualFold(mdl, "unknown") {
+					mdl = "" // android sentinel; let `adb devices -l` model win
+				}
 			}
 			if mfr != "" {
 				devices[idx].Manufacturer = mfr

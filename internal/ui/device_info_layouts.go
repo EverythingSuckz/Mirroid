@@ -124,16 +124,23 @@ func (l *tightVLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 }
 
 func (l *tightVLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	total := l.MinSize(objects).Height
+	heights := make([]float32, len(objects))
+	var total float32
+	for i, o := range objects {
+		heights[i] = o.MinSize().Height
+		total += heights[i]
+		if i > 0 {
+			total += l.spacing
+		}
+	}
 	y := (size.Height - total) / 2
 	if y < 0 {
 		y = 0
 	}
 	for i, o := range objects {
-		m := o.MinSize()
-		o.Resize(fyne.NewSize(size.Width, m.Height))
+		o.Resize(fyne.NewSize(size.Width, heights[i]))
 		o.Move(fyne.NewPos(0, y))
-		y += m.Height
+		y += heights[i]
 		if i < len(objects)-1 {
 			y += l.spacing
 		}

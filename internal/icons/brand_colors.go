@@ -34,33 +34,45 @@ func BrandColor(manufacturer string) (color.Color, bool) {
 	if c, ok := brandColors[key]; ok {
 		return c, true
 	}
-	if i := strings.IndexAny(key, " ,."); i > 0 {
-		if c, ok := brandColors[key[:i]]; ok {
+	if alt := firstTokenKey(key); alt != "" {
+		if c, ok := brandColors[alt]; ok {
 			return c, true
 		}
 	}
 	return nil, false
 }
 
-// IsLightColor reports whether a color's perceived brightness is high enough
-// that it would disappear against a white background (e.g., Sony's white).
-func IsLightColor(c color.Color) bool {
-	return relativeLuminance(c) > 0.85
+// firstTokenKey returns the prefix of key up to the first space/comma/period,
+// or "" when there is no separator.
+func firstTokenKey(key string) string {
+	if i := strings.IndexAny(key, " ,."); i > 0 {
+		return key[:i]
+	}
+	return ""
 }
 
-// IsDarkColor reports whether a color's perceived brightness is low enough
-// that it would disappear against a dark-gray background (e.g., Honor's black).
+// IsLightColor reports whether a color is bright enough that it would
+// disappear against a white background (e.g., Sony's white).
+func IsLightColor(c color.Color) bool {
+	return perceivedBrightness(c) > 0.85
+}
+
+// IsDarkColor reports whether a color is dark enough that it would disappear
+// against a dark-gray background (e.g., Honor's black).
 func IsDarkColor(c color.Color) bool {
-	return relativeLuminance(c) < 0.05
+	return perceivedBrightness(c) < 0.05
 }
 
 // IsDarkBackground reports whether the given color is dark enough to warrant
 // dark-theme treatment. Threshold (0.5) tuned for the default Fyne themes.
 func IsDarkBackground(c color.Color) bool {
-	return relativeLuminance(c) < 0.5
+	return perceivedBrightness(c) < 0.5
 }
 
-func relativeLuminance(c color.Color) float64 {
+// perceivedBrightness is a fast sRGB-weighted approximation, not WCAG
+// relative luminance — it skips the gamma-to-linear step. Thresholds in
+// IsLightColor / IsDarkColor / IsDarkBackground are tuned against this scale.
+func perceivedBrightness(c color.Color) float64 {
 	nr := color.NRGBAModel.Convert(c).(color.NRGBA)
 	r := float64(nr.R) / 255.0
 	g := float64(nr.G) / 255.0

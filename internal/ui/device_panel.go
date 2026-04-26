@@ -113,14 +113,29 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 		if id >= 0 && id < len(dp.devices) {
 			serial = dp.devices[id].Serial
 		}
-		changed := serial != "" && serial != dp.lastSelected
+		prevSerial := dp.lastSelected
+		changed := serial != "" && serial != prevSerial
+		prevIdx := -1
 		if changed {
 			dp.lastSelected = serial
+			if prevSerial != "" {
+				for i, d := range dp.devices {
+					if d.Serial == prevSerial {
+						prevIdx = i
+						break
+					}
+				}
+			}
 		}
 		dp.mu.Unlock()
 
 		if changed {
-			dp.deviceList.Refresh() // re-bind so prior row drops accent and new row gains it
+			// re-bind only the two affected rows so the prior row drops its
+			// accent and the new one gains it without re-binding the list.
+			if prevIdx >= 0 {
+				dp.deviceList.RefreshItem(prevIdx)
+			}
+			dp.deviceList.RefreshItem(id)
 		}
 		if changed && dp.app.deviceInfoPanel != nil {
 			go dp.app.deviceInfoPanel.LoadDeviceInfo(serial)

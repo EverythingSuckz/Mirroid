@@ -38,8 +38,22 @@ func newAvatarBg(radius float32, fallback color.Color) *avatarBg {
 }
 
 func (a *avatarBg) SetBrand(brand color.Color) {
+	if colorsEqual(a.brand, brand) {
+		return
+	}
 	a.brand = brand
 	a.Refresh()
+}
+
+// colorsEqual compares two colors via NRGBA components, treating two nils as
+// equal. Used to skip a Refresh when the brand color hasn't actually changed.
+func colorsEqual(a, b color.Color) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	an := color.NRGBAModel.Convert(a).(color.NRGBA)
+	bn := color.NRGBAModel.Convert(b).(color.NRGBA)
+	return an == bn
 }
 
 func (a *avatarBg) resolve() color.Color {

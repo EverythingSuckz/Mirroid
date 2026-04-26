@@ -46,7 +46,6 @@ func newDeviceRow(onCheck func(serial string, checked bool)) *deviceRow {
 	r.avatarIcon.SetMinSize(fyne.NewSize(deviceRowIconSize, deviceRowIconSize))
 	r.avatarIcon.FillMode = canvas.ImageFillContain
 	r.nameTxt.TextStyle = fyne.TextStyle{Bold: true}
-	r.addrTxt.TextSize = theme.Size(theme.SizeNameCaptionText)
 	r.check.OnChanged = func(c bool) {
 		if r.onCheck != nil {
 			r.onCheck(r.serial, c)
@@ -110,6 +109,7 @@ func (r *deviceRow) bind(d adb.Device, status model.DeviceStatus, selected, chec
 	r.avatarIcon.Refresh()
 
 	r.addrTxt.Color = theme.Color(theme.ColorNamePlaceHolder)
+	r.addrTxt.TextSize = theme.Size(theme.SizeNameCaptionText)
 	r.addrTxt.Text = d.Serial + "  ·  " + connTypeLabel(d.Serial)
 	r.addrTxt.Refresh()
 
@@ -122,6 +122,5 @@ func (r *deviceRow) bind(d adb.Device, status model.DeviceStatus, selected, chec
 	saved := r.check.OnChanged
 	r.check.OnChanged = nil
 	r.check.SetChecked(checked)
-	r.check.Enable()
 	r.check.OnChanged = saved
 }
