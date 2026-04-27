@@ -11,6 +11,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
@@ -70,6 +71,60 @@ type App struct {
 	themeSystemItem *fyne.MenuItem
 	themeDarkItem   *fyne.MenuItem
 	themeLightItem  *fyne.MenuItem
+
+	// toasts
+	toastManager       *ToastManager
+	notificationCenter *NotificationCenter
+	bellBtn            *widget.Button
+	bellDot            *canvas.Rectangle
+
+	errToastMu   sync.Mutex
+	errToastLast map[string]time.Time
+}
+
+// refreshBell shows or hides the unread dot on the bell. Safe to call from
+// any goroutine.
+func (a *App) refreshBell() {
+	if a.bellDot == nil {
+		return
+	}
+	fyne.Do(func() {
+		if a.notificationCenter != nil && a.notificationCenter.hasUnread() {
+			a.bellDot.Show()
+		} else {
+			a.bellDot.Hide()
+		}
+		a.bellDot.Refresh()
+	})
+}
+
+func (a *App) shouldShowErrorToast(serial string) bool {
+	a.errToastMu.Lock()
+	defer a.errToastMu.Unlock()
+	if a.errToastLast == nil {
+		a.errToastLast = make(map[string]time.Time)
+	}
+	now := time.Now()
+	if last, ok := a.errToastLast[serial]; ok && now.Sub(last) < 2*time.Second {
+		return false
+	}
+	a.errToastLast[serial] = now
+	return true
+}
+
+// `Toast` pushes a notification toast to the top-right overlay layer and
+// records it in the notification history. Safe to call from any goroutine.
+func (a *App) Toast(title, message string, variant ToastVariant) {
+	if a.notificationCenter != nil {
+		a.notificationCenter.push(notification{
+			title: title, message: message, variant: variant, when: time.Now(),
+		})
+		a.refreshBell()
+	}
+	if a.toastManager == nil {
+		return
+	}
+	fyne.Do(func() { a.toastManager.Show(title, message, variant) })
 }
 
 func (a *App) isIgnored(key string) bool {
@@ -121,6 +176,7 @@ func NewApp(debug bool) (*App, error) {
 	}
 
 	a.themeManager = NewThemeManager(a.fyneApp, a.cfg, a.window)
+	a.notificationCenter = newNotificationCenter()
 
 	a.logsPanel = NewLogsPanel()
 	a.logsPanel.SetApp(a)
@@ -168,6 +224,19 @@ func (a *App) initClients(adbPath, scrcpyPath string) {
 			a.devicePanel.deviceList.Refresh()
 			a.deviceInfoPanel.refreshActionsLocked()
 		})
+	}
+	a.runner.OnError = func(serial, msg string) {
+		// scrcpy often emits multiple ERROR lines for a single failure
+		// (e.g. "Demuxer 'video': stream disabled" + "Demuxer error").
+		// Collapse anything within 2 s of the last toast for this device.
+		if !a.shouldShowErrorToast(serial) {
+			return
+		}
+		title := "Mirror error"
+		if dev, ok := a.devicePanel.GetDevice(serial); ok && dev.Model != "" {
+			title = "Mirror error · " + dev.Model
+		}
+		a.Toast(title, msg, ToastError)
 	}
 
 	a.cfg.AppConf.ADBPath = adbPath

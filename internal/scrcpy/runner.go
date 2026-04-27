@@ -15,10 +15,10 @@ import (
 type ProcessState int
 
 const (
-	StateIdle       ProcessState = iota // no process running
-	StateLaunching                      // process started, waiting for video stream
-	StateMirroring                      // video stream confirmed active (Texture: seen)
-	StateError                          // process encountered an error
+	StateIdle      ProcessState = iota // no process running
+	StateLaunching                     // process started, waiting for video stream
+	StateMirroring                     // video stream confirmed active (Texture: seen)
+	StateError                         // process encountered an error
 )
 
 // Process wraps a running scrcpy instance.
@@ -43,6 +43,10 @@ type Runner struct {
 	// OnStateChange is called after the process list changes (launch, exit).
 	// The serial of the affected device is passed as argument.
 	OnStateChange func(serial string)
+
+	// OnError is called when scrcpy emits an ERROR line on stdout/stderr.
+	// Fires for every error (transient retries included), not just terminal ones.
+	OnError func(serial, msg string)
 }
 
 func NewRunner(scrcpyPath string) *Runner {
@@ -56,9 +60,6 @@ func NewRunner(scrcpyPath string) *Runner {
 	}
 }
 
-// Launch starts a scrcpy process for the given device and options.
-// If windowTitle is non-empty, scrcpy is launched with --window-title for reparenting.
-// Log lines are sent to logFn from a goroutine (thread-safe callback expected).
 func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(string), windowTitle string) error {
 	args := opts.BuildCommand(r.scrcpyPath, serial)
 	if windowTitle != "" {
@@ -96,7 +97,7 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 		for scanner.Scan() {
 			line := scanner.Text()
 			logFn(line)
-			// Detect scrcpy server errors in real-time
+			// detect scrcpy server errors in real-time
 			if strings.Contains(line, "ERROR") {
 				var errMsg string
 				if idx := strings.Index(line, "ERROR:"); idx >= 0 {
@@ -108,12 +109,15 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 				r.failedSerials[serial] = errMsg
 				r.deviceStates[serial] = StateError
 				r.mu.Unlock()
-				// Notify immediately so the table status updates
+				// notify immediately so the table status updates
 				if r.OnStateChange != nil {
 					r.OnStateChange(serial)
 				}
+				if r.OnError != nil {
+					r.OnError(serial, errMsg)
+				}
 			}
-			// Detect video stream active (scrcpy window opened)
+			// detect video stream active (scrcpy window opened)
 			if strings.Contains(line, "Texture:") {
 				r.mu.Lock()
 				if r.deviceStates[serial] == StateLaunching || r.deviceStates[serial] == StateError {
@@ -146,7 +150,7 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 				break
 			}
 		}
-		// Keep StateError so the UI can show it briefly; it will be
+		// keep StateError so the UI can show it briefly; it will be
 		// auto-cleared by the next refreshDevices cycle (~3 s).
 		if r.failedSerials[serial] != "" {
 			r.deviceStates[serial] = StateError
@@ -237,14 +241,11 @@ func (r *Runner) ClearErrorFor(serial string) {
 	}
 }
 
-// ClearExitedErrors clears StateError and failedSerials for devices that
-// no longer have a running process. Called from refreshDevices so errors
-// are visible for one refresh cycle (~3 s) before auto-clearing.
 func (r *Runner) ClearExitedErrors() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Build a set of serials that still have a running process.
+	// build a set of serials that still have a running process.
 	running := make(map[string]bool, len(r.processes))
 	for _, p := range r.processes {
 		running[p.serial] = true

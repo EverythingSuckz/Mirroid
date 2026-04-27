@@ -28,13 +28,14 @@ type DevicePanel struct {
 	deviceList     *widget.List
 	selectAllCheck *widget.Check
 	statusLabel    *widget.Label
-	devices        []adb.Device      // all known devices (connected + disconnected)
-	connectedSet   map[string]bool   // serials currently reported by adb
-	checkedSerials map[string]bool   // serials checked for batch actions
-	reconnectingSet map[string]bool  // serials currently reconnecting
+	devices         []adb.Device      // all known devices (connected + disconnected)
+	connectedSet    map[string]bool   // serials currently reported by adb
+	checkedSerials  map[string]bool   // serials checked for batch actions
+	reconnectingSet map[string]bool   // serials currently reconnecting
 	reconnectErrors map[string]string // serials that failed to reconnect
-	lastSelected   string
-	mu             sync.Mutex
+	lastSelected    string
+	firstSync       bool // true after the first refreshDevices completes
+	mu              sync.Mutex
 
 	// bulk action buttons — context-sensitive based on checked devices
 	mirrorBtn     *ttwidget.Button
