@@ -14,11 +14,13 @@ import (
 type OptionsPanel struct {
 	app *App
 
-	bitrate  *widget.Entry
-	maxSize  *widget.Entry
-	maxFPS   *widget.Entry
-	codec    *widget.Select
-	videoSrc *widget.Select
+	bitrate         *widget.Entry
+	maxSize         *widget.Entry
+	maxFPS          *widget.Entry
+	codec           *widget.Select
+	videoSrc        *widget.Select
+	cameraFacing    *widget.Select
+	cameraFacingRow *fyne.Container
 
 	audioEnabled *widget.Check
 	audioSource  *widget.Select
@@ -74,8 +76,18 @@ func (op *OptionsPanel) Build() fyne.CanvasObject {
 	op.codec = widget.NewSelect(model.Codecs, op.notifyChanged)
 	op.codec.SetSelected(defaults.Codec)
 
-	op.videoSrc = widget.NewSelect(model.VideoSources, op.notifyChanged)
+	op.cameraFacing = widget.NewSelect(model.CameraFacings, op.notifyChanged)
+	op.cameraFacing.SetSelected(defaults.CameraFacing)
+
+	op.videoSrc = widget.NewSelect(model.VideoSources, func(_ string) {
+		op.refreshCameraFacingVisibility()
+		op.notify()
+	})
 	op.videoSrc.SetSelected(defaults.VideoSource)
+
+	op.cameraFacingRow = container.NewGridWithColumns(2,
+		labeledField("Camera Facing", op.cameraFacing),
+	)
 
 	videoTab := container.NewVBox(
 		container.NewGridWithColumns(3,
@@ -87,7 +99,9 @@ func (op *OptionsPanel) Build() fyne.CanvasObject {
 			labeledField("Codec", op.codec),
 			labeledField("Source", op.videoSrc),
 		),
+		op.cameraFacingRow,
 	)
+	op.refreshCameraFacingVisibility()
 
 	op.audioEnabled = widget.NewCheck("Enable Audio", op.notifyChangedBool)
 	op.audioEnabled.SetChecked(defaults.AudioEnabled)
@@ -180,6 +194,20 @@ func (op *OptionsPanel) SyncToModel(opts *model.ScrcpyOptions) {
 	opts.HIDKeyboard = op.hidKeyboard.Checked
 	opts.HIDMouse = op.hidMouse.Checked
 	opts.VideoSource = op.videoSrc.Selected
+	opts.CameraFacing = op.cameraFacing.Selected
+}
+
+// refreshCameraFacingVisibility shows the camera-facing row only when the
+// video source is set to "camera" — the flag is otherwise irrelevant.
+func (op *OptionsPanel) refreshCameraFacingVisibility() {
+	if op.cameraFacingRow == nil {
+		return
+	}
+	if op.videoSrc.Selected == model.VideoSourceCamera {
+		op.cameraFacingRow.Show()
+	} else {
+		op.cameraFacingRow.Hide()
+	}
 }
 
 // SyncFromModel sets all widgets from a ScrcpyOptions.
@@ -213,6 +241,12 @@ func (op *OptionsPanel) SyncFromModel(opts model.ScrcpyOptions) {
 	op.hidKeyboard.SetChecked(opts.HIDKeyboard)
 	op.hidMouse.SetChecked(opts.HIDMouse)
 	op.videoSrc.SetSelected(opts.VideoSource)
+	if opts.CameraFacing != "" {
+		op.cameraFacing.SetSelected(opts.CameraFacing)
+	} else {
+		op.cameraFacing.SetSelected(model.CameraFacingBack)
+	}
+	op.refreshCameraFacingVisibility()
 }
 
 func (op *OptionsPanel) notify() {
