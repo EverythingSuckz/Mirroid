@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"net"
+	"strings"
 
 	"mirroid/internal/adb"
 )
@@ -15,6 +16,20 @@ func parseHostFromAddr(addr string) string {
 		return addr
 	}
 	return host
+}
+
+// deviceFriendlyName returns a human-readable name, prefixing manufacturer
+// when it isn't already part of the model string.
+func deviceFriendlyName(d adb.Device) string {
+	name := d.Model
+	if name == "" {
+		name = d.Serial
+	}
+	if d.Manufacturer != "" &&
+		!strings.HasPrefix(strings.ToLower(name), strings.ToLower(d.Manufacturer)) {
+		name = d.Manufacturer + " " + name
+	}
+	return name
 }
 
 // ReconnectDevice attempts to reconnect a disconnected device.

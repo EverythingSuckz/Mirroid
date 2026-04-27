@@ -122,10 +122,12 @@ func (a *App) checkForUpdates(silent bool) {
 		a.cfg.AppConf.LastUpdateCheck = time.Now().Unix()
 		_ = a.cfg.SaveAppConfig()
 		if result.Available {
-			changelog := u.FetchChangelog(result.Release.TagName)
-			fyne.Do(func() {
-				a.showUpdateDialog(u, result, changelog)
-			})
+			a.Toast(
+				"Update available",
+				fmt.Sprintf("Mirroid v%s is ready (you have v%s). Open About → Check for Updates to install.",
+					result.LatestVersion, result.CurrentVersion),
+				ToastInfo,
+			)
 		}
 	}()
 }

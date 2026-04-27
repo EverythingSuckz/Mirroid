@@ -155,4 +155,5 @@ var (
 	MemoryStickIcon   = mustLoad("memory-stick.svg")
 	ZapIcon           = mustLoad("zap.svg")
 	HeartIcon         = mustLoad("heart.svg")
+	BellIcon          = mustLoad("bell.svg")
 )

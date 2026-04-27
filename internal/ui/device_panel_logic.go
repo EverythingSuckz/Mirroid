@@ -42,6 +42,11 @@ func (dp *DevicePanel) refreshDevices() {
 	selectedSerial := dp.lastSelected
 	wasConnected := dp.connectedSet[selectedSerial]
 
+	// snapshot before overwriting so we can diff for connect/disconnect toasts
+	oldConnected := dp.connectedSet
+	notify := dp.firstSync
+	dp.firstSync = true
+
 	// build connected set from live ADB results
 	dp.connectedSet = make(map[string]bool, len(liveDevices))
 	for _, d := range liveDevices {
@@ -108,7 +113,38 @@ func (dp *DevicePanel) refreshDevices() {
 	// capture new connection state
 	nowConnected := dp.connectedSet[selectedSerial]
 
+	var connected, disconnected []adb.Device
+	if notify {
+		for _, d := range liveDevices {
+			if !oldConnected[d.Serial] {
+				connected = append(connected, d)
+			}
+		}
+		for serial := range oldConnected {
+			if dp.connectedSet[serial] {
+				continue
+			}
+			// skip user-initiated disconnects (Disconnect button adds to ignoredAddrs).
+			if dp.app.isIgnored(serial) {
+				continue
+			}
+			for _, dev := range dp.devices {
+				if dev.Serial == serial {
+					disconnected = append(disconnected, dev)
+					break
+				}
+			}
+		}
+	}
+
 	dp.mu.Unlock()
+
+	for _, d := range connected {
+		dp.app.Toast("Device connected", deviceFriendlyName(d), ToastSuccess)
+	}
+	for _, d := range disconnected {
+		dp.app.Toast("Device disconnected", deviceFriendlyName(d), ToastWarning)
+	}
 
 	dp.saveKnownDevices()
 

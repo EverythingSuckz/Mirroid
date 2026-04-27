@@ -26,7 +26,8 @@ type ScrcpyOptions struct {
 	StayAwake     bool   `json:"stay_awake"`
 	HIDKeyboard   bool   `json:"hid_keyboard"`
 	HIDMouse      bool   `json:"hid_mouse"`
-	VideoSource   string `json:"video_source"` // display, camera
+	VideoSource   string `json:"video_source"`  // display, camera
+	CameraFacing  string `json:"camera_facing"` // back, front, external (only used when VideoSource is camera)
 }
 
 // DefaultOptions returns a ScrcpyOptions with sensible defaults.
@@ -38,6 +39,7 @@ func DefaultOptions() ScrcpyOptions {
 		AudioSource:   AudioSourceOutput,
 		ClipboardSync: true,
 		VideoSource:   VideoSourceDisplay,
+		CameraFacing:  CameraFacingBack,
 	}
 }
 
@@ -67,6 +69,12 @@ func (o *ScrcpyOptions) Validate() error {
 	validVideoSources := map[string]bool{VideoSourceDisplay: true, VideoSourceCamera: true}
 	if !validVideoSources[o.VideoSource] {
 		return errors.New("video source must be one of: display, camera")
+	}
+	if o.VideoSource == VideoSourceCamera {
+		validFacings := map[string]bool{CameraFacingBack: true, CameraFacingFront: true, CameraFacingExternal: true}
+		if !validFacings[o.CameraFacing] {
+			return errors.New("camera facing must be one of: back, front, external")
+		}
 	}
 	return nil
 }
@@ -149,6 +157,9 @@ func (o *ScrcpyOptions) BuildCommand(scrcpyPath, deviceSerial string) []string {
 	}
 	if o.VideoSource == VideoSourceCamera {
 		cmd = append(cmd, "--video-source", VideoSourceCamera)
+		if o.CameraFacing != "" {
+			cmd = append(cmd, "--camera-facing", o.CameraFacing)
+		}
 	}
 
 	return cmd

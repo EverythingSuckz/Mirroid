@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"image/color"
 	"log/slog"
 	"time"
 
@@ -17,11 +18,11 @@ import (
 	"mirroid/internal/adb"
 	"mirroid/internal/config"
 	"mirroid/internal/deps"
+	"mirroid/internal/icons"
 )
 
 // buildMainUI sets up the menu, panels, device refresh goroutines, and window content.
 func (a *App) buildMainUI() {
-	// Theme submenu items (View > Theme > System / Dark / Light)
 	a.themeSystemItem = fyne.NewMenuItem("System", func() {
 		a.themeManager.SetMode(config.ThemeModeSystem)
 		a.updateThemeMenuChecks()
@@ -82,10 +83,16 @@ func (a *App) buildMainUI() {
 		}),
 	)
 
-	mainMenu := fyne.NewMainMenu(viewMenu, deviceMenu, aboutMenu)
-	a.window.SetMainMenu(mainMenu)
+	// -----------------------------------------------------------------------
+	// we render our own menu bar (see top toolbar below) instead of using
+	// fyne's native main menu 
+	// 
+	// this way, the notification bell can sit on
+	// the same row as the menu items. macOS still
+	// gets its default app menu (About / Quit) automatically.
+	// -----------------------------------------------------------------------
 
-	// Empty state
+	// empty state
 	emptyIcon := canvas.NewImageFromResource(theme.ComputerIcon())
 	emptyIcon.FillMode = canvas.ImageFillContain
 	emptyIcon.SetMinSize(fyne.NewSize(emptyStateIconSize, emptyStateIconSize))
@@ -119,12 +126,24 @@ func (a *App) buildMainUI() {
 		),
 	)
 
-	// Connected state
-	a.deviceSection = widget.NewCard("Devices", "", a.devicePanel.Build())
+	// connected state
+	devicesTitle := widget.NewRichText(&widget.TextSegment{
+		Text: "Devices",
+		Style: widget.RichTextStyle{
+			ColorName: theme.ColorNameForeground,
+			SizeName:  theme.SizeNameHeadingText,
+			TextStyle: fyne.TextStyle{Bold: true},
+		},
+	})
+	a.deviceSection = container.NewBorder(
+		container.NewPadded(devicesTitle),
+		nil, nil, nil,
+		a.devicePanel.Build(),
+	)
 
 	topArea := a.deviceSection
 
-	// Bottom area: options with inline preset controls in the header
+	// bottom area: options with inline preset controls in the header
 	optionsTitle := widget.NewLabelWithStyle("Options", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	presetControls := a.presetsPanel.Build()
 	optionsHeader := container.NewBorder(nil, nil, optionsTitle, presetControls)
@@ -133,7 +152,7 @@ func (a *App) buildMainUI() {
 
 	a.optionsContent = container.NewVScroll(optionsSection)
 
-	// Disconnected hint (shown when selected device is offline)
+	// disconnected hint (shown when selected device is offline)
 	hintIcon := canvas.NewImageFromResource(theme.ComputerIcon())
 	hintIcon.FillMode = canvas.ImageFillContain
 	hintIcon.SetMinSize(fyne.NewSize(hintIconSize, hintIconSize))
@@ -162,9 +181,52 @@ func (a *App) buildMainUI() {
 	a.connectedState = split
 	a.connectedState.Hide()
 
-	// Root: stack with both states, toggle visibility
-	a.rootContainer = container.NewStack(a.emptyState, a.connectedState)
-	a.window.SetContent(fynetooltip.AddWindowToolTipLayer(a.rootContainer, a.window.Canvas()))
+	// no-layout host claims no min size so clicks pass through empty
+	// regions to the main UI underneath.
+	a.toastManager = newToastManager(a.window.Canvas())
+	a.rootContainer = container.NewStack(a.emptyState, a.connectedState, a.toastManager.host)
+
+	a.bellBtn = widget.NewButtonWithIcon("", icons.NewThemedIcon(icons.BellIcon), func() {
+		a.showNotificationPopover(a.bellBtn)
+	})
+	a.bellBtn.Importance = widget.LowImportance
+
+	a.bellDot = canvas.NewRectangle(color.NRGBA{R: 0xef, G: 0x53, B: 0x50, A: 0xff})
+	a.bellDot.CornerRadius = 4
+	a.bellDot.SetMinSize(fyne.NewSize(8, 8))
+	a.bellDot.Hide()
+	bellWithDot := container.New(&bellWithDotLayout{inset: 6}, a.bellBtn, a.bellDot)
+
+	cv := a.window.Canvas()
+	menuBtns := []fyne.CanvasObject{
+		menuBarButton(cv, "View", viewMenu),
+		menuBarButton(cv, "Device", deviceMenu),
+		menuBarButton(cv, "About", aboutMenu),
+	}
+	if a.debug {
+		debugMenu := fyne.NewMenu("Debug",
+			fyne.NewMenuItem("Toast: Info", func() {
+				a.Toast("Heads up", "Just a friendly informational toast.", ToastInfo)
+			}),
+			fyne.NewMenuItem("Toast: Success", func() {
+				a.Toast("All set", "Operation completed successfully.", ToastSuccess)
+			}),
+			fyne.NewMenuItem("Toast: Warning", func() {
+				a.Toast("Take a look", "Something looks off but we're carrying on.", ToastWarning)
+			}),
+			fyne.NewMenuItem("Toast: Error", func() {
+				a.Toast("Mirror error", "Capture/encoding error: java.lang.IllegalStateException: null", ToastError)
+			}),
+		)
+		menuBtns = append(menuBtns, menuBarButton(cv, "Debug", debugMenu))
+	}
+	leftMenus := container.NewHBox(menuBtns...)
+	menuRow := container.NewBorder(nil, nil, leftMenus, bellWithDot)
+	slim := container.NewThemeOverride(menuRow, &slimMenuBarTheme{})
+	menuBar := container.NewVBox(slim, widget.NewSeparator())
+	withMenuBar := container.NewBorder(menuBar, nil, nil, nil, a.rootContainer)
+
+	a.window.SetContent(fynetooltip.AddWindowToolTipLayer(withMenuBar, a.window.Canvas()))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go adb.WatchDevices(ctx, 1_000_000_000, func(devices []adb.MdnsDevice) {
@@ -201,7 +263,7 @@ func (a *App) buildMainUI() {
 		}()
 	}
 
-	// Auto-check for updates on startup (with 12-hour cooldown)
+	// auto-check for updates on startup (with 12-hour cooldown)
 	if a.cfg.AppConf.AutoCheckUpdates {
 		go func() {
 			time.Sleep(5 * time.Second)
