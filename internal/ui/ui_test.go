@@ -287,6 +287,29 @@ func TestDevicePanelMultiSelect(t *testing.T) {
 	}
 }
 
+func TestBuildCameraLabelsDisambiguatesDuplicates(t *testing.T) {
+	cams := []scrcpy.CameraInfo{
+		{ID: "0", Facing: "back", Size: "4000x3000"},
+		{ID: "2", Facing: "back", Size: "4000x3000"},
+		{ID: "1", Facing: "front", Size: "3264x2448"},
+	}
+
+	labels, mapping := buildCameraLabels(cams)
+
+	if len(labels) != 4 {
+		t.Fatalf("labels: got %d, want 4 (default + 3 cameras)", len(labels))
+	}
+	if got := mapping["Back · 4000x3000 (0)"]; got != "0" {
+		t.Errorf("first duplicate: got id %q, want 0", got)
+	}
+	if got := mapping["Back · 4000x3000 (2)"]; got != "2" {
+		t.Errorf("second duplicate: got id %q, want 2", got)
+	}
+	if got := mapping["Front · 3264x2448"]; got != "1" {
+		t.Errorf("unique label should stay unsuffixed: got id %q, want 1", got)
+	}
+}
+
 func TestPresetsPanelBuild(t *testing.T) {
 	a := test.NewApp()
 	defer a.Quit()

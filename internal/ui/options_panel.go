@@ -368,13 +368,7 @@ func (op *OptionsPanel) applyCameraOptions(cams []scrcpy.CameraInfo) {
 	}
 	op.cameraMu.Unlock()
 
-	labels := []string{cameraDefaultLabel}
-	mapping := map[string]string{cameraDefaultLabel: ""}
-	for _, c := range cams {
-		label := cameraLabel(c)
-		labels = append(labels, label)
-		mapping[label] = c.ID
-	}
+	labels, mapping := buildCameraLabels(cams)
 
 	op.cameraMu.Lock()
 	op.cameraLabelToID = mapping
@@ -412,6 +406,28 @@ func (op *OptionsPanel) IsCameraIDValid(id string) bool {
 		}
 	}
 	return false
+}
+
+// buildCameraLabels returns the dropdown labels and label to id mapping.
+// Labels double as map keys, so duplicates (two cameras with the same
+// facing and size) get the camera id appended to stay selectable.
+func buildCameraLabels(cams []scrcpy.CameraInfo) ([]string, map[string]string) {
+	counts := map[string]int{}
+	for _, c := range cams {
+		counts[cameraLabel(c)]++
+	}
+
+	labels := []string{cameraDefaultLabel}
+	mapping := map[string]string{cameraDefaultLabel: ""}
+	for _, c := range cams {
+		label := cameraLabel(c)
+		if counts[label] > 1 {
+			label += " (" + c.ID + ")"
+		}
+		labels = append(labels, label)
+		mapping[label] = c.ID
+	}
+	return labels, mapping
 }
 
 func cameraLabel(c scrcpy.CameraInfo) string {
