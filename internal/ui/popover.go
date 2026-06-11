@@ -16,10 +16,19 @@ const popoverRadius = 8
 type popover struct {
 	widget.BaseWidget
 
-	canvas    fyne.Canvas
-	content   fyne.CanvasObject
-	panelPos  fyne.Position
-	panelSize fyne.Size
+	canvas      fyne.Canvas
+	content     fyne.CanvasObject
+	panelPos    fyne.Position
+	panelSize   fyne.Size
+	initialSize fyne.Size // canvas size last we laid out; mismatch → reposition or dismiss
+
+	// reposition, if set, recomputes panelPos when the canvas size changes;
+	// otherwise the popover auto-dismisses on resize.
+	reposition func(canvasSize fyne.Size) fyne.Position
+
+	// OnHide fires once when the popover is removed from the overlay stack,
+	// regardless of whether dismissal was via tap-outside or programmatic.
+	OnHide func()
 }
 
 func newPopover(content fyne.CanvasObject, c fyne.Canvas) *popover {
@@ -33,12 +42,18 @@ func newPopover(content fyne.CanvasObject, c fyne.Canvas) *popover {
 func (p *popover) ShowAt(pos fyne.Position, size fyne.Size) {
 	p.panelPos = pos
 	p.panelSize = size
+	p.initialSize = p.canvas.Size()
 	p.canvas.Overlays().Add(p)
 	p.Refresh()
 }
 
 func (p *popover) hideOverlay() {
 	p.canvas.Overlays().Remove(p)
+	if p.OnHide != nil {
+		fn := p.OnHide
+		p.OnHide = nil // run at most once
+		fn()
+	}
 }
 
 func (p *popover) Tapped(e *fyne.PointEvent) {
@@ -82,8 +97,20 @@ func (r *popoverRenderer) Destroy() {}
 func (r *popoverRenderer) Refresh() {
 	// Self-resize to match the canvas so Tapped sees clicks anywhere; same
 	// pattern fyne's own widget.PopUp uses.
-	if r.popover.canvas.Size() != r.popover.Size() {
-		r.popover.Resize(r.popover.canvas.Size())
+	canvasSize := r.popover.canvas.Size()
+	// canvas resized since anchoring - reposition if possible, else dismiss
+	// (panelPos is absolute and stale).
+	if r.popover.initialSize.Width > 0 && canvasSize != r.popover.initialSize {
+		r.popover.initialSize = canvasSize
+		if r.popover.reposition != nil {
+			r.popover.panelPos = r.popover.reposition(canvasSize)
+		} else {
+			r.popover.hideOverlay()
+			return
+		}
+	}
+	if canvasSize != r.popover.Size() {
+		r.popover.Resize(canvasSize)
 	} else {
 		r.Layout(r.popover.Size())
 	}

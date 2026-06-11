@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -35,7 +36,7 @@ func newNotificationCenter() *NotificationCenter {
 	return &NotificationCenter{}
 }
 
-func (c *NotificationCenter) push(n notification) {
+func (c *NotificationCenter) push(n notification) notification {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.nextID++
@@ -45,6 +46,7 @@ func (c *NotificationCenter) push(n notification) {
 		c.history = c.history[len(c.history)-maxNotificationHistory:]
 	}
 	c.unread++
+	return n
 }
 
 func (c *NotificationCenter) snapshot() []notification {
@@ -68,8 +70,12 @@ func (c *NotificationCenter) removeByID(id uint64) {
 	for i, n := range c.history {
 		if n.id == id {
 			c.history = append(c.history[:i], c.history[i+1:]...)
-			return
+			break
 		}
+	}
+	// keep the unread dot honest when dismissing without opening the tray
+	if c.unread > len(c.history) {
+		c.unread = len(c.history)
 	}
 }
 
@@ -89,6 +95,9 @@ const (
 	notifPopoverWidth  float32 = 340
 	notifPopoverHeight float32 = 340
 	notifPopoverGap    float32 = 6
+	notifDetailWidth   float32 = 380
+	notifDetailMaxH    float32 = 400
+	notifDetailPad     float32 = 18
 )
 
 func (a *App) showNotificationPopover(anchor fyne.CanvasObject) {
@@ -99,6 +108,37 @@ func (a *App) showNotificationPopover(anchor fyne.CanvasObject) {
 	clearBtn := ttwidget.NewButtonWithIcon("", theme.DeleteIcon(), nil)
 	clearBtn.Importance = widget.LowImportance
 	clearBtn.SetToolTip("Clear all")
+
+	scroll := container.NewVScroll(listBox)
+
+	titleLbl := widget.NewRichText(&widget.TextSegment{
+		Text: "Notifications",
+		Style: widget.RichTextStyle{
+			SizeName:  theme.SizeNameSubHeadingText,
+			TextStyle: fyne.TextStyle{Bold: true},
+		},
+	})
+	headerRow := container.NewBorder(nil, nil, titleLbl, clearBtn)
+	header := container.NewVBox(headerRow, widget.NewSeparator())
+
+	var pop *popover
+	size := fyne.NewSize(notifPopoverWidth, notifPopoverHeight)
+
+	// size the popover to its content; the scroll takes over past the max.
+	applySize := func() {
+		// chrome = outer padding + header + border gap above the scroll
+		chrome := header.MinSize().Height + theme.Padding() + 2*toastPadding
+		scrollH := listBox.MinSize().Height
+		if maxH := notifPopoverHeight - chrome; scrollH > maxH {
+			scrollH = maxH
+		}
+		scroll.SetMinSize(fyne.NewSize(notifPopoverWidth-2*toastPadding, scrollH))
+		size = fyne.NewSize(notifPopoverWidth, scrollH+chrome)
+		if pop != nil {
+			pop.panelSize = size
+			pop.Refresh()
+		}
+	}
 
 	var rebuild func()
 	rebuild = func() {
@@ -113,34 +153,31 @@ func (a *App) showNotificationPopover(anchor fyne.CanvasObject) {
 					rows = append(rows, widget.NewSeparator())
 				}
 				n := history[i]
-				rows = append(rows, buildNotificationRow(n, func() {
+				row := buildNotificationRow(n, func() {
 					a.notificationCenter.removeByID(n.id)
 					rebuild()
-				}))
+				})
+				row.OnTap = func() {
+					if pop != nil {
+						pop.hideOverlay()
+					}
+					a.showNotificationDetailPopover(n)
+				}
+				rows = append(rows, row)
 			}
 		}
 		listBox.Objects = rows
 		listBox.Refresh()
 		clearBtn.Hidden = len(history) == 0
 		clearBtn.Refresh()
+		applySize()
 	}
 	rebuild()
 
-	scroll := container.NewVScroll(listBox)
-	scroll.SetMinSize(fyne.NewSize(notifPopoverWidth-2*toastPadding, notifPopoverHeight-56))
-
-	titleLbl := widget.NewRichText(&widget.TextSegment{
-		Text: "Notifications",
-		Style: widget.RichTextStyle{
-			SizeName:  theme.SizeNameSubHeadingText,
-			TextStyle: fyne.TextStyle{Bold: true},
-		},
-	})
-	header := container.NewBorder(nil, nil, titleLbl, clearBtn)
 	body := container.NewBorder(header, nil, nil, nil, scroll)
 	padded := container.New(&paddedLayout{pad: toastPadding}, body)
 
-	pop := newPopover(padded, a.window.Canvas())
+	pop = newPopover(padded, a.window.Canvas())
 
 	clearBtn.OnTapped = func() {
 		a.notificationCenter.clear()
@@ -148,41 +185,139 @@ func (a *App) showNotificationPopover(anchor fyne.CanvasObject) {
 	}
 
 	driver := fyne.CurrentApp().Driver()
-	absPos := driver.AbsolutePositionForObject(anchor)
-	size := fyne.NewSize(notifPopoverWidth, notifPopoverHeight)
-	x := absPos.X + anchor.Size().Width - size.Width
-	if x < notifPopoverGap {
-		x = notifPopoverGap
+	calcPos := func() fyne.Position {
+		abs := driver.AbsolutePositionForObject(anchor)
+		canvasW := a.window.Canvas().Size().Width
+		x := abs.X + anchor.Size().Width - size.Width
+		if maxX := canvasW - size.Width - notifPopoverGap; x > maxX {
+			x = maxX
+		}
+		if x < notifPopoverGap {
+			x = notifPopoverGap
+		}
+		return fyne.NewPos(x, abs.Y+anchor.Size().Height+notifPopoverGap)
 	}
-	y := absPos.Y + anchor.Size().Height + notifPopoverGap
-	pop.ShowAt(fyne.NewPos(x, y), size)
+	pop.reposition = func(_ fyne.Size) fyne.Position { return calcPos() }
+
+	cancel := a.addResizeListener(func(_ fyne.Size) { pop.Refresh() })
+	pop.OnHide = cancel
+
+	pop.ShowAt(calcPos(), size)
 }
 
-func buildNotificationRow(n notification, onDismiss func()) fyne.CanvasObject {
+// showNotificationDetailPopover opens a centered popover with the full,
+// selectable text. X closes; Dismiss also removes it from the tray history.
+func (a *App) showNotificationDetailPopover(n notification) {
+	var pop *popover
+
 	dot := canvas.NewRectangle(toastAccentColor(n.variant))
 	dot.CornerRadius = toastDotSize / 2
 	dotBox := container.New(&fixedSizeLayout{width: toastDotSize, height: toastDotSize}, dot)
 
 	title := widget.NewLabelWithStyle(n.title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	title.SizeName = theme.SizeNameSubHeadingText
+	title.Wrapping = fyne.TextWrapWord
+	title.Selectable = true
 
-	// canvas.Text gives us a real placeholder color in both themes —
+	timeText := canvas.NewText(formatRelativeTime(n.when), theme.Color(theme.ColorNamePlaceHolder))
+	timeText.TextSize = theme.Size(theme.SizeNameCaptionText)
+
+	closeX := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
+		if pop != nil {
+			pop.hideOverlay()
+		}
+	})
+	closeX.Importance = widget.LowImportance
+
+	rightSide := container.NewHBox(container.NewCenter(timeText), closeX)
+	header := container.NewBorder(nil, nil,
+		container.NewCenter(dotBox),
+		rightSide,
+		title,
+	)
+
+	body := widget.NewLabel(n.message)
+	body.Wrapping = fyne.TextWrapWord
+	body.Selectable = true
+
+	dismissBtn := widget.NewButton("Dismiss", func() {
+		a.notificationCenter.removeByID(n.id)
+		a.refreshBell()
+		if pop != nil {
+			pop.hideOverlay()
+		}
+	})
+	dismissBtn.Importance = widget.HighImportance
+	footer := container.NewHBox(layout.NewSpacer(), dismissBtn)
+
+	topPart := container.NewVBox(header, widget.NewSeparator())
+	content := container.NewBorder(topPart, footer, nil, nil, body)
+	padded := container.New(&paddedLayout{pad: notifDetailPad}, content)
+
+	// size to content: lay out at the fixed width so the wrapping label
+	// reports its real height, then clamp + scroll past the max.
+	padded.Resize(fyne.NewSize(notifDetailWidth, padded.MinSize().Height))
+	height := padded.MinSize().Height
+	if height > notifDetailMaxH {
+		height = notifDetailMaxH
+		content = container.NewBorder(topPart, footer, nil, nil, container.NewVScroll(body))
+		padded = container.New(&paddedLayout{pad: notifDetailPad}, content)
+	}
+
+	pop = newPopover(padded, a.window.Canvas())
+
+	size := fyne.NewSize(notifDetailWidth, height)
+	calcPos := func() fyne.Position {
+		c := a.window.Canvas().Size()
+		x := (c.Width - size.Width) / 2
+		if x < notifPopoverGap {
+			x = notifPopoverGap
+		}
+		y := (c.Height - size.Height) / 2
+		if y < notifPopoverGap {
+			y = notifPopoverGap
+		}
+		return fyne.NewPos(x, y)
+	}
+	pop.reposition = func(_ fyne.Size) fyne.Position { return calcPos() }
+
+	cancel := a.addResizeListener(func(_ fyne.Size) { pop.Refresh() })
+	pop.OnHide = cancel
+
+	pop.ShowAt(calcPos(), size)
+}
+
+func buildNotificationRow(n notification, onDismiss func()) *hoverCard {
+	dot := canvas.NewRectangle(toastAccentColor(n.variant))
+	dot.CornerRadius = toastDotSize / 2
+	dotBox := container.New(&fixedSizeLayout{width: toastDotSize, height: toastDotSize}, dot)
+
+	title := widget.NewLabelWithStyle(n.title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	title.Truncation = fyne.TextTruncateEllipsis
+
+	// canvas.Text gives us a real placeholder color in both themes -
 	// widget.Label's LowImportance is too washed-out in light mode.
 	timeText := canvas.NewText(formatRelativeTime(n.when), theme.Color(theme.ColorNamePlaceHolder))
 	timeText.TextSize = theme.Size(theme.SizeNameCaptionText)
 
-	closeBtn := widget.NewButtonWithIcon("", theme.CancelIcon(), onDismiss)
+	closeBtn := ttwidget.NewButtonWithIcon("", theme.CancelIcon(), onDismiss)
 	closeBtn.Importance = widget.LowImportance
+	closeBtn.SetToolTip("Dismiss")
 
+	// center slot so long titles truncate instead of pushing time/close off
+	// the popover edge.
 	right := container.NewHBox(container.NewCenter(timeText), closeBtn)
 	header := container.NewBorder(nil, nil,
-		container.NewHBox(container.NewCenter(dotBox), title),
+		container.NewCenter(dotBox),
 		right,
+		title,
 	)
 
+	// single line; the click-to-open detail view shows the full message.
 	msg := widget.NewLabel(n.message)
-	msg.Wrapping = fyne.TextWrapWord
+	msg.Truncation = fyne.TextTruncateEllipsis
 
-	return container.NewPadded(container.NewVBox(header, msg))
+	return newHoverCard(container.NewPadded(container.NewVBox(header, indentToTitle(msg))))
 }
 
 // formatRelativeTime is recomputed each time the popover is opened. While the

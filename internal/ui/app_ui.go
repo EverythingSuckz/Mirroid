@@ -184,6 +184,7 @@ func (a *App) buildMainUI() {
 	// no-layout host claims no min size so clicks pass through empty
 	// regions to the main UI underneath.
 	a.toastManager = newToastManager(a.window.Canvas())
+	a.toastManager.OnResize = a.fireResize
 	a.rootContainer = container.NewStack(a.emptyState, a.connectedState, a.toastManager.host)
 
 	a.bellBtn = widget.NewButtonWithIcon("", icons.NewThemedIcon(icons.BellIcon), func() {

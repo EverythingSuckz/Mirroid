@@ -80,6 +80,42 @@ type App struct {
 
 	errToastMu   sync.Mutex
 	errToastLast map[string]time.Time
+
+	resizeMu        sync.Mutex
+	resizeListeners []*resizeListener
+}
+
+type resizeListener struct {
+	fn func(fyne.Size)
+}
+
+// addResizeListener registers a canvas-resize callback (driven by the toast
+// host's layout pass) and returns a cancel func to deregister it.
+func (a *App) addResizeListener(fn func(fyne.Size)) func() {
+	rl := &resizeListener{fn: fn}
+	a.resizeMu.Lock()
+	a.resizeListeners = append(a.resizeListeners, rl)
+	a.resizeMu.Unlock()
+	return func() {
+		a.resizeMu.Lock()
+		defer a.resizeMu.Unlock()
+		for i, x := range a.resizeListeners {
+			if x == rl {
+				a.resizeListeners = append(a.resizeListeners[:i], a.resizeListeners[i+1:]...)
+				return
+			}
+		}
+	}
+}
+
+func (a *App) fireResize(size fyne.Size) {
+	a.resizeMu.Lock()
+	listeners := make([]*resizeListener, len(a.resizeListeners))
+	copy(listeners, a.resizeListeners)
+	a.resizeMu.Unlock()
+	for _, l := range listeners {
+		l.fn(size)
+	}
 }
 
 // refreshBell shows or hides the unread dot on the bell. Safe to call from
@@ -115,16 +151,18 @@ func (a *App) shouldShowErrorToast(serial string) bool {
 // `Toast` pushes a notification toast to the top-right overlay layer and
 // records it in the notification history. Safe to call from any goroutine.
 func (a *App) Toast(title, message string, variant ToastVariant) {
+	var onTap func()
 	if a.notificationCenter != nil {
-		a.notificationCenter.push(notification{
+		n := a.notificationCenter.push(notification{
 			title: title, message: message, variant: variant, when: time.Now(),
 		})
 		a.refreshBell()
+		onTap = func() { a.showNotificationDetailPopover(n) }
 	}
 	if a.toastManager == nil {
 		return
 	}
-	fyne.Do(func() { a.toastManager.Show(title, message, variant) })
+	fyne.Do(func() { a.toastManager.Show(title, message, variant, onTap) })
 }
 
 func (a *App) isIgnored(key string) bool {

@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -32,6 +33,7 @@ const (
 	toastSlideDuration         = 220 * time.Millisecond
 	toastDefaultLife           = 5 * time.Second
 	toastErrorLife             = 8 * time.Second
+	toastMaxMessageRunes       = 240
 )
 
 func toastAccentColor(v ToastVariant) color.Color {
@@ -45,6 +47,12 @@ func toastAccentColor(v ToastVariant) color.Color {
 	default:
 		return color.NRGBA{R: 0x21, G: 0x96, B: 0xf3, A: 0xff}
 	}
+}
+
+// indentToTitle left-pads obj to align with the title text past the dot.
+func indentToTitle(obj fyne.CanvasObject) fyne.CanvasObject {
+	pad := container.New(&fixedSizeLayout{width: toastDotSize, height: 1}, layout.NewSpacer())
+	return container.NewBorder(nil, nil, pad, nil, obj)
 }
 
 type paddedLayout struct{ pad float32 }
@@ -120,17 +128,65 @@ type ToastManager struct {
 	host   *fyne.Container
 	mu     sync.Mutex
 	toasts []*toast
+
+	// OnResize fires on canvas-driven host resizes so the App can broadcast
+	// to resize-aware UI (open popovers).
+	OnResize func(fyne.Size)
 }
 
-func newToastManager(c fyne.Canvas) *ToastManager {
-	return &ToastManager{
-		canvas: c,
-		host:   container.NewWithoutLayout(),
+// toastHostLayout is a no-op layout (toasts position themselves absolutely)
+// that doubles as the canvas-resize detector.
+type toastHostLayout struct {
+	manager  *ToastManager
+	lastSize fyne.Size
+}
+
+func (l *toastHostLayout) MinSize(_ []fyne.CanvasObject) fyne.Size { return fyne.NewSize(0, 0) }
+
+func (l *toastHostLayout) Layout(_ []fyne.CanvasObject, size fyne.Size) {
+	if size == l.lastSize {
+		return
+	}
+	l.lastSize = size
+	if l.manager == nil {
+		return
+	}
+	l.manager.reflow()
+	if l.manager.OnResize != nil {
+		l.manager.OnResize(size)
 	}
 }
 
-func (m *ToastManager) Show(title, message string, variant ToastVariant) {
-	t := m.buildToast(title, message, variant)
+func newToastManager(c fyne.Canvas) *ToastManager {
+	m := &ToastManager{canvas: c}
+	m.host = container.New(&toastHostLayout{manager: m})
+	return m
+}
+
+// reflow snaps every live toast back to the right edge after a canvas resize.
+func (m *ToastManager) reflow() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	hostW := m.canvas.Size().Width
+	finalX := hostW - toastWidth - toastMargin
+	y := toastMargin
+	for _, t := range m.toasts {
+		if t.dismissed {
+			continue
+		}
+		if t.posAnim != nil {
+			t.posAnim.Stop()
+			t.posAnim = nil
+		}
+		t.root.Move(fyne.NewPos(finalX, y))
+		y += t.height + toastGap
+	}
+}
+
+// Show displays a toast. onTap, if non-nil, fires when the body is clicked
+// (after the toast dismisses); the close button only dismisses.
+func (m *ToastManager) Show(title, message string, variant ToastVariant, onTap func()) {
+	t := m.buildToast(title, message, variant, onTap)
 
 	life := toastDefaultLife
 	if variant == ToastError || variant == ToastWarning {
@@ -176,7 +232,7 @@ func (m *ToastManager) Show(title, message string, variant ToastVariant) {
 	}()
 }
 
-func (m *ToastManager) buildToast(title, message string, variant ToastVariant) *toast {
+func (m *ToastManager) buildToast(title, message string, variant ToastVariant, onTap func()) *toast {
 	bg := canvas.NewRectangle(theme.Color(theme.ColorNameOverlayBackground))
 	bg.CornerRadius = toastCornerRadius
 	bg.StrokeColor = theme.Color(theme.ColorNameSeparator)
@@ -187,21 +243,28 @@ func (m *ToastManager) buildToast(title, message string, variant ToastVariant) *
 	dotBox := container.New(&fixedSizeLayout{width: toastDotSize, height: toastDotSize}, dot)
 
 	titleLbl := widget.NewLabelWithStyle(title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	titleLbl.Truncation = fyne.TextTruncateEllipsis
 
 	t := &toast{}
 	closeBtn := widget.NewButtonWithIcon("", theme.CancelIcon(), func() { t.dismiss() })
 	closeBtn.Importance = widget.LowImportance
 
+	// center slot so long titles truncate instead of running over the close.
 	header := container.NewBorder(nil, nil,
-		container.NewHBox(container.NewCenter(dotBox), titleLbl),
+		container.NewCenter(dotBox),
 		closeBtn,
+		titleLbl,
 	)
 
 	var content fyne.CanvasObject
 	if message != "" {
+		// toasts are transient - clamp; the tray detail view has the full text.
+		if r := []rune(message); len(r) > toastMaxMessageRunes {
+			message = string(r[:toastMaxMessageRunes]) + "…"
+		}
 		body := widget.NewLabel(message)
 		body.Wrapping = fyne.TextWrapWord
-		content = container.NewVBox(header, body)
+		content = container.NewVBox(header, indentToTitle(body))
 	} else {
 		content = header
 	}
@@ -213,7 +276,23 @@ func (m *ToastManager) buildToast(title, message string, variant ToastVariant) *
 	drainContainer := container.New(drainLayoutInst, drainBar)
 
 	inner := container.NewBorder(nil, drainContainer, nil, nil, paddedContent)
-	root := container.NewStack(bg, inner)
+	// tap layer under the content: labels don't consume taps so body clicks
+	// fall through to it, while the close button keeps its own.
+	var root *fyne.Container
+	if onTap != nil {
+		tap := newHoverCard(layout.NewSpacer())
+		tap.radius = toastCornerRadius
+		tap.OnTap = func() {
+			if t.dismissed { // still tappable during slide-out
+				return
+			}
+			t.dismiss()
+			onTap()
+		}
+		root = container.NewStack(bg, tap, inner)
+	} else {
+		root = container.NewStack(bg, inner)
+	}
 
 	// Resize once so the wrapping label can compute its real height before
 	// MinSize is read.

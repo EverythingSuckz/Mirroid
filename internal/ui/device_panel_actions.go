@@ -65,6 +65,12 @@ func (dp *DevicePanel) ReconnectDevice(serial string) {
 
 		if err != nil {
 			dp.app.logsPanel.Log("[ERROR]Reconnect " + serial + ": " + err.Error())
+			target := serial
+			if dev, ok := dp.GetDevice(serial); ok && dev.Model != "" {
+				target = deviceFriendlyName(dev) + " at " + serial
+			}
+			msg := "Couldn't reach " + target + ". The device may be offline, or its wireless debugging port may have changed."
+			dp.app.Toast("Reconnect failed", msg, ToastError)
 		} else {
 			dp.app.logsPanel.Log("[OK]Reconnected " + serial)
 		}
