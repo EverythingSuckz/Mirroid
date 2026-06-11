@@ -161,7 +161,7 @@ func TestParseCPUCores(t *testing.T) {
 		want  int
 	}{
 		{"two cores", "processor\t: 0\nBogoMIPS\t: 52.00\nprocessor\t: 1\n", 2},
-		// ARM header line "Processor : AArch64 ..." must NOT be counted —
+		// ARM header line "Processor : AArch64 ..." must NOT be counted -
 		// the device has 2 cores, not 3.
 		{"arm header excluded", "Processor\t: AArch64 Processor rev 4 (aarch64)\nprocessor\t: 0\nprocessor\t: 1\n", 2},
 		{"empty", "", -1},
@@ -191,9 +191,9 @@ func TestParseWifiSSID(t *testing.T) {
 		{`SSID: OpenNet, BSSID: cc:dd`, "OpenNet"},
 		// BSSID-only line must not be mis-parsed as SSID.
 		{"   BSSID: 00:11:22:33:44:55, RSSI: -50", "-"},
-		// BSSID first, real SSID later in the same line — must pick SSID.
+		// BSSID first, real SSID later in the same line - must pick SSID.
 		{`BSSID: aa:bb:cc:dd:ee:ff SSID: "RealNet"`, "RealNet"},
-		// BSSID line followed by SSID line — must pick SSID line.
+		// BSSID line followed by SSID line - must pick SSID line.
 		{"BSSID: aa:bb:cc:dd:ee:ff\nSSID: \"NextNet\"", "NextNet"},
 		// mWifiInfo wins over an earlier configured network entry.
 		{

@@ -266,7 +266,7 @@ func ParseSemver(v string) [3]int {
 // moveFile tries os.Rename first; falls back to copy+delete for cross-device.
 // Retries briefly to handle antivirus locks on newly downloaded executables.
 func moveFile(src, dst string) error {
-	// Retry rename — on Windows, antivirus may briefly lock new executables.
+	// Retry rename - on Windows, antivirus may briefly lock new executables.
 	var renameErr error
 	for i := 0; i < 5; i++ {
 		if renameErr = os.Rename(src, dst); renameErr == nil {
@@ -300,7 +300,7 @@ func moveFile(src, dst string) error {
 		in.Close()
 		return err
 	}
-	// Must close source before deleting — Windows locks open files.
+	// Must close source before deleting - Windows locks open files.
 	in.Close()
 	return os.Remove(src)
 }

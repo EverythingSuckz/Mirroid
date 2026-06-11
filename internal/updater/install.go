@@ -7,5 +7,5 @@ const (
 	InstallPortable  InstallType = iota // standalone binary
 	InstallInstaller                    // Windows Inno Setup (Program Files)
 	InstallAppImage                     // Linux AppImage
-	InstallSystem                       // Linux .deb (/usr/bin) — browser only
+	InstallSystem                       // Linux .deb (/usr/bin) - browser only
 )

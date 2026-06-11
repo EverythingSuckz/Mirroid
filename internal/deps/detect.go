@@ -31,10 +31,10 @@ func DetectAll(appDir, configADB, configScrcpy string) (adbResult, scrcpyResult 
 }
 
 // Detect checks a single binary by searching these locations in order:
-//  1. App directory (flat alongside exe) — covers Windows installer, portable, Linux tarball, macOS .app
-//  2. Lib directory (appDir/../lib/mirroid/) — covers Linux .deb and AppImage
-//  3. Config path — if absolute and file exists (returning users with custom paths)
-//  4. System PATH — exec.LookPath (users who installed separately)
+//  1. App directory (flat alongside exe) - covers Windows installer, portable, Linux tarball, macOS .app
+//  2. Lib directory (appDir/../lib/mirroid/) - covers Linux .deb and AppImage
+//  3. Config path - if absolute and file exists (returning users with custom paths)
+//  4. System PATH - exec.LookPath (users who installed separately)
 func Detect(bin BinaryName, appDir, configPath string) DetectResult {
 	name := binaryFileName(bin)
 

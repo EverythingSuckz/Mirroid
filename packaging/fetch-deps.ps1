@@ -93,7 +93,7 @@ Write-Step "Extracting scrcpy files..."
 $scrcpyExtract = Join-Path $TempDir "scrcpy"
 Expand-Archive -Path $scrcpyZip -DestinationPath $scrcpyExtract -Force
 
-# The zip contains a top-level directory like scrcpy-win64-v3.3.4/ — copy its contents flat
+# The zip contains a top-level directory like scrcpy-win64-v3.3.4/ - copy its contents flat
 $scrcpyInner = Get-ChildItem $scrcpyExtract -Directory | Select-Object -First 1
 if ($scrcpyInner) {
     Copy-Item (Join-Path $scrcpyInner.FullName "*") $BundledDir -Recurse -Force

@@ -68,7 +68,7 @@ func (dp *DevicePanel) refreshDevices() {
 	}
 	for _, d := range liveDevices {
 		if idx, exists := knownBySerial[d.Serial]; exists {
-			// exact serial match — update metadata, but don't drop a known
+			// exact serial match - update metadata, but don't drop a known
 			// Model/Manufacturer if a transient getprop returned empty.
 			if d.Model != "" {
 				dp.devices[idx].Model = d.Model
