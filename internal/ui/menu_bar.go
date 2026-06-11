@@ -10,29 +10,30 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// slimMenuBarTheme delegates everything to the active theme but tightens
-// padding so the menu-bar row is shorter than fyne's default button height.
-type slimMenuBarTheme struct{}
+// slimRowTheme delegates everything to the active theme but tightens
+// padding so toolbar rows are shorter than fyne's default button height.
+// Reused for the menu bar and the presets header row.
+type slimRowTheme struct{}
 
-var _ fyne.Theme = (*slimMenuBarTheme)(nil)
+var _ fyne.Theme = (*slimRowTheme)(nil)
 
-func (t *slimMenuBarTheme) base() fyne.Theme {
+func (t *slimRowTheme) base() fyne.Theme {
 	return fyne.CurrentApp().Settings().Theme()
 }
 
-func (t *slimMenuBarTheme) Color(name fyne.ThemeColorName, v fyne.ThemeVariant) color.Color {
+func (t *slimRowTheme) Color(name fyne.ThemeColorName, v fyne.ThemeVariant) color.Color {
 	return t.base().Color(name, v)
 }
 
-func (t *slimMenuBarTheme) Font(s fyne.TextStyle) fyne.Resource {
+func (t *slimRowTheme) Font(s fyne.TextStyle) fyne.Resource {
 	return t.base().Font(s)
 }
 
-func (t *slimMenuBarTheme) Icon(n fyne.ThemeIconName) fyne.Resource {
+func (t *slimRowTheme) Icon(n fyne.ThemeIconName) fyne.Resource {
 	return t.base().Icon(n)
 }
 
-func (t *slimMenuBarTheme) Size(name fyne.ThemeSizeName) float32 {
+func (t *slimRowTheme) Size(name fyne.ThemeSizeName) float32 {
 	switch name {
 	case theme.SizeNamePadding:
 		return 2

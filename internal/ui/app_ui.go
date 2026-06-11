@@ -143,14 +143,15 @@ func (a *App) buildMainUI() {
 
 	topArea := a.deviceSection
 
-	// bottom area: options with inline preset controls in the header
+	// bottom area: options with inline preset controls in the header.
+	// The header + tab strip stay pinned at the top of this section; only
+	// each tab's content scrolls (handled inside optionsPanel.Build).
 	optionsTitle := widget.NewLabelWithStyle("Options", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	presetControls := a.presetsPanel.Build()
+	presetControls := container.NewThemeOverride(a.presetsPanel.Build(), &slimRowTheme{})
 	optionsHeader := container.NewBorder(nil, nil, optionsTitle, presetControls)
 	optionsTabs := a.optionsPanel.Build()
-	optionsSection := container.NewVBox(optionsHeader, widget.NewSeparator(), optionsTabs)
-
-	a.optionsContent = container.NewVScroll(optionsSection)
+	optionsTop := container.NewVBox(container.NewPadded(optionsHeader), widget.NewSeparator())
+	a.optionsContent = container.NewBorder(optionsTop, nil, nil, nil, optionsTabs)
 
 	// disconnected hint (shown when selected device is offline)
 	hintIcon := canvas.NewImageFromResource(theme.ComputerIcon())
@@ -223,7 +224,7 @@ func (a *App) buildMainUI() {
 	}
 	leftMenus := container.NewHBox(menuBtns...)
 	menuRow := container.NewBorder(nil, nil, leftMenus, bellWithDot)
-	slim := container.NewThemeOverride(menuRow, &slimMenuBarTheme{})
+	slim := container.NewThemeOverride(menuRow, &slimRowTheme{})
 	menuBar := container.NewVBox(slim, widget.NewSeparator())
 	withMenuBar := container.NewBorder(menuBar, nil, nil, nil, a.rootContainer)
 
@@ -317,10 +318,10 @@ func (a *App) showMissingDepsDialog(adbR, scrcpyR deps.DetectResult) {
 	var msg string
 	msg = "Some dependencies could not be found:\n\n"
 	if !adbR.Found {
-		msg += "  • adb — https://developer.android.com/tools/releases/platform-tools\n"
+		msg += "  • adb - https://developer.android.com/tools/releases/platform-tools\n"
 	}
 	if !scrcpyR.Found {
-		msg += "  • scrcpy — https://github.com/Genymobile/scrcpy/releases\n"
+		msg += "  • scrcpy - https://github.com/Genymobile/scrcpy/releases\n"
 	}
 	msg += "\nInstall them and add to PATH, or reinstall Mirroid using the full installer."
 
