@@ -347,7 +347,11 @@ func (op *OptionsPanel) refreshCameraList() {
 			}
 			op.cameraMu.Unlock()
 
-			op.applyCameraOptions(cams)
+			// the fetch can outlive a device switch; cache the result but
+			// don't overwrite the now selected device's dropdown
+			if op.app.devicePanel.SelectedDevice() == serial {
+				op.applyCameraOptions(cams)
+			}
 
 			if op.app.cfg != nil {
 				if saveErr := op.app.cfg.SaveCameraCache(snapshot); saveErr != nil {
