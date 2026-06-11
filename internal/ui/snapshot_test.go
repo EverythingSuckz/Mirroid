@@ -192,6 +192,47 @@ func TestSnapshotNotificationPanelHover(t *testing.T) {
 	saveSnapshot(t, w.Canvas(), "notification_panel_hover_dark")
 }
 
+func TestSnapshotShortWindow(t *testing.T) {
+	snapshotDir(t)
+	app, w := newSnapshotApp(t, theme.VariantDark)
+	w.Resize(fyne.NewSize(900, 240))
+
+	now := time.Now()
+	app.notificationCenter.push(notification{
+		title: "Device connected", message: "Xiaomi Redmi Note 8",
+		variant: ToastSuccess, when: now.Add(-2 * time.Hour),
+	})
+	app.notificationCenter.push(notification{
+		title: "Device disconnected", message: "Xiaomi Redmi Note 8",
+		variant: ToastWarning, when: now.Add(-50 * time.Minute),
+	})
+	app.notificationCenter.push(reconnectFailedNotification(now.Add(-30 * time.Second)))
+
+	anchor := widget.NewButtonWithIcon("", theme.InfoIcon(), nil)
+	w.SetContent(container.NewBorder(
+		container.NewBorder(nil, nil, nil, anchor),
+		nil, nil, nil, widget.NewLabel(""),
+	))
+	app.showNotificationPopover(anchor)
+	saveSnapshot(t, w.Canvas(), "notification_panel_short_dark")
+}
+
+func TestSnapshotShortWindowDetail(t *testing.T) {
+	snapshotDir(t)
+	app, w := newSnapshotApp(t, theme.VariantDark)
+	w.Resize(fyne.NewSize(900, 240))
+
+	app.showNotificationDetailPopover(notification{
+		id:    1,
+		title: "Mirror error · Redmi Note 8",
+		message: strings.Repeat(
+			"Capture/encoding error: java.lang.IllegalStateException: Surface was abandoned. ", 6),
+		variant: ToastError,
+		when:    time.Now(),
+	})
+	saveSnapshot(t, w.Canvas(), "notification_detail_short_dark")
+}
+
 func TestSnapshotNotificationPanelEmpty(t *testing.T) {
 	snapshotDir(t)
 	app, w := newSnapshotApp(t, theme.VariantDark)

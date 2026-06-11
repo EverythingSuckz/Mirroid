@@ -126,10 +126,16 @@ func (a *App) showNotificationPopover(anchor fyne.CanvasObject) {
 
 	// size the popover to its content; the scroll takes over past the max.
 	applySize := func() {
+		maxPanelH := notifPopoverHeight
+		// short windows get a smaller scrolling panel instead of one that
+		// runs past the canvas
+		if ch := a.window.Canvas().Size().Height - 2*notifPopoverGap; ch > 0 && ch < maxPanelH {
+			maxPanelH = ch
+		}
 		// chrome = outer padding + header + border gap above the scroll
 		chrome := header.MinSize().Height + theme.Padding() + 2*toastPadding
 		scrollH := listBox.MinSize().Height
-		if maxH := notifPopoverHeight - chrome; scrollH > maxH {
+		if maxH := maxPanelH - chrome; scrollH > maxH {
 			scrollH = maxH
 		}
 		scroll.SetMinSize(fyne.NewSize(notifPopoverWidth-2*toastPadding, scrollH))
@@ -187,15 +193,26 @@ func (a *App) showNotificationPopover(anchor fyne.CanvasObject) {
 	driver := fyne.CurrentApp().Driver()
 	calcPos := func() fyne.Position {
 		abs := driver.AbsolutePositionForObject(anchor)
-		canvasW := a.window.Canvas().Size().Width
+		cs := a.window.Canvas().Size()
 		x := abs.X + anchor.Size().Width - size.Width
-		if maxX := canvasW - size.Width - notifPopoverGap; x > maxX {
+		if maxX := cs.Width - size.Width - notifPopoverGap; x > maxX {
 			x = maxX
 		}
 		if x < notifPopoverGap {
 			x = notifPopoverGap
 		}
-		return fyne.NewPos(x, abs.Y+anchor.Size().Height+notifPopoverGap)
+		y := abs.Y + anchor.Size().Height + notifPopoverGap
+		// no room below the anchor: flip above it, else pin to the bottom
+		if y+size.Height+notifPopoverGap > cs.Height {
+			if above := abs.Y - size.Height - notifPopoverGap; above >= notifPopoverGap {
+				y = above
+			} else if maxY := cs.Height - size.Height - notifPopoverGap; maxY >= notifPopoverGap {
+				y = maxY
+			} else {
+				y = notifPopoverGap
+			}
+		}
+		return fyne.NewPos(x, y)
 	}
 	pop.reposition = func(_ fyne.Size) fyne.Position { return calcPos() }
 
@@ -256,10 +273,14 @@ func (a *App) showNotificationDetailPopover(n notification) {
 
 	// size to content: lay out at the fixed width so the wrapping label
 	// reports its real height, then clamp + scroll past the max.
+	maxH := notifDetailMaxH
+	if ch := a.window.Canvas().Size().Height - 2*notifPopoverGap; ch > 0 && ch < maxH {
+		maxH = ch
+	}
 	padded.Resize(fyne.NewSize(notifDetailWidth, padded.MinSize().Height))
 	height := padded.MinSize().Height
-	if height > notifDetailMaxH {
-		height = notifDetailMaxH
+	if height > maxH {
+		height = maxH
 		content = container.NewBorder(topPart, footer, nil, nil, container.NewVScroll(body))
 		padded = container.New(&paddedLayout{pad: notifDetailPad}, content)
 	}
@@ -274,6 +295,9 @@ func (a *App) showNotificationDetailPopover(n notification) {
 			x = notifPopoverGap
 		}
 		y := (c.Height - size.Height) / 2
+		if maxY := c.Height - size.Height - notifPopoverGap; y > maxY && maxY >= notifPopoverGap {
+			y = maxY
+		}
 		if y < notifPopoverGap {
 			y = notifPopoverGap
 		}
