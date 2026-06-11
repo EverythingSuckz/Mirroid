@@ -55,7 +55,6 @@ func TestOptionsPanelSyncRoundTrip(t *testing.T) {
 		AlwaysOnTop:   true,
 		Rotation:      2,
 		TurnScreenOff: true,
-		RecordFile:    "test.mp4",
 		WindowTitle:   "Test Title",
 		ClipboardSync: false,
 		StayAwake:     true,
@@ -100,9 +99,6 @@ func TestOptionsPanelSyncRoundTrip(t *testing.T) {
 	}
 	if !result.TurnScreenOff {
 		t.Error("TurnScreenOff should be true")
-	}
-	if result.RecordFile != "test.mp4" {
-		t.Errorf("RecordFile: got %s, want test.mp4", result.RecordFile)
 	}
 	if result.WindowTitle != "Test Title" {
 		t.Errorf("WindowTitle: got %s, want Test Title", result.WindowTitle)
@@ -212,12 +208,12 @@ func TestDevicePanelBuild(t *testing.T) {
 		t.Fatal("DevicePanel.Build() returned nil")
 	}
 
-	// No devices — SelectedDevice should return empty
+	// No devices - SelectedDevice should return empty
 	if got := dp.SelectedDevice(); got != "" {
 		t.Errorf("SelectedDevice with no devices: got %q, want empty", got)
 	}
 
-	// No devices — SelectedDevices should return empty
+	// No devices - SelectedDevices should return empty
 	if got := dp.SelectedDevices(); len(got) != 0 {
 		t.Errorf("SelectedDevices with no devices: got %v, want empty", got)
 	}

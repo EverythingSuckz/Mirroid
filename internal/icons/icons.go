@@ -156,4 +156,5 @@ var (
 	ZapIcon           = mustLoad("zap.svg")
 	HeartIcon         = mustLoad("heart.svg")
 	BellIcon          = mustLoad("bell.svg")
+	TrafficConeIcon   = mustLoad("traffic-cone.svg")
 )

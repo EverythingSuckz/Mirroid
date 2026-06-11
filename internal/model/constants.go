@@ -20,13 +20,6 @@ const (
 	VideoSourceCamera  = "camera"
 )
 
-// Camera facings (--camera-facing).
-const (
-	CameraFacingBack     = "back"
-	CameraFacingFront    = "front"
-	CameraFacingExternal = "external"
-)
-
 // Audio sources.
 const (
 	AudioSourceOutput   = "output"
@@ -35,8 +28,7 @@ const (
 )
 
 var (
-	Codecs        = []string{CodecH264, CodecH265, CodecAV1}
-	VideoSources  = []string{VideoSourceDisplay, VideoSourceCamera}
-	CameraFacings = []string{CameraFacingBack, CameraFacingFront, CameraFacingExternal}
-	AudioSources  = []string{AudioSourceOutput, AudioSourceMic, AudioSourcePlayback}
+	Codecs       = []string{CodecH264, CodecH265, CodecAV1}
+	VideoSources = []string{VideoSourceDisplay, VideoSourceCamera}
+	AudioSources = []string{AudioSourceOutput, AudioSourceMic, AudioSourcePlayback}
 )

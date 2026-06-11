@@ -9,6 +9,7 @@ import (
 
 	"mirroid/internal/adb"
 	"mirroid/internal/model"
+	"mirroid/internal/scrcpy"
 )
 
 const appDirName = "Mirroid"
@@ -89,6 +90,10 @@ func (c *Config) devicesPath() string {
 
 func (c *Config) devicePresetsPath() string {
 	return filepath.Join(c.dir, "device_presets.json")
+}
+
+func (c *Config) cameraCachePath() string {
+	return filepath.Join(c.dir, "cameras.json")
 }
 
 func (c *Config) SaveAppConfig() error {
@@ -173,4 +178,32 @@ func (c *Config) SaveKnownDevices(devices []adb.Device) error {
 		return err
 	}
 	return os.WriteFile(c.devicesPath(), data, 0o644)
+}
+
+// LoadCameraCache reads the per-device camera list cache from disk. The
+// cache is keyed by adb device serial; each value is the last successful
+// `scrcpy --list-cameras` result. Used to populate the camera dropdown
+// instantly when the user re-selects a previously-seen device.
+func (c *Config) LoadCameraCache() (map[string][]scrcpy.CameraInfo, error) {
+	result := make(map[string][]scrcpy.CameraInfo)
+	data, err := os.ReadFile(c.cameraCachePath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return result, nil
+		}
+		return nil, fmt.Errorf("config: could not read camera cache: %w", err)
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("config: camera cache file is corrupt: %w", err)
+	}
+	return result, nil
+}
+
+// SaveCameraCache writes the per-device camera list cache to disk.
+func (c *Config) SaveCameraCache(cache map[string][]scrcpy.CameraInfo) error {
+	data, err := json.MarshalIndent(cache, "", "    ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(c.cameraCachePath(), data, 0o644)
 }

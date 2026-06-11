@@ -4,25 +4,27 @@ import (
 	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-
-	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 
 	"mirroid/internal/model"
 )
 
-const addNewItem = "+ New Preset"
+const (
+	addNewItem    = "+ New Preset"
+	untitledLabel = "<Untitled>"
+)
 
 // PresetsPanel manages save/load of option presets.
 type PresetsPanel struct {
 	app          *App
-	presetSelect *widget.Select
-	saveBtn      *ttwidget.Button
-	discardBtn   *ttwidget.Button
-	deleteBtn    *ttwidget.Button
+	presetSelect *compactSelect
+	saveBtn      *compactButton
+	discardBtn   *compactButton
+	deleteBtn    *compactButton
 	presets      map[string]model.ScrcpyOptions
 	devicePresets map[string]string          // serial -> preset name
 	snapshot     model.ScrcpyOptions         // clean state to restore on discard
@@ -53,27 +55,33 @@ func (pp *PresetsPanel) Build() fyne.CanvasObject {
 
 	pp.snapshot = pp.app.options
 
-	pp.presetSelect = widget.NewSelect(pp.presetNames(), pp.onSelect)
+	pp.presetSelect = newCompactSelect(pp.presetNames(), pp.onSelect)
 	pp.presetSelect.PlaceHolder = "Presets..."
 
-	pp.saveBtn = ttwidget.NewButtonWithIcon("", theme.DocumentSaveIcon(), pp.onSave)
-	pp.saveBtn.Importance = widget.LowImportance
+	pp.saveBtn = newCompactButton(theme.DocumentSaveIcon(), pp.onSave)
 	pp.saveBtn.SetToolTip("Save current settings as preset")
 
-	pp.discardBtn = ttwidget.NewButtonWithIcon("", theme.CancelIcon(), pp.onDiscard)
-	pp.discardBtn.Importance = widget.LowImportance
+	pp.discardBtn = newCompactButton(theme.CancelIcon(), pp.onDiscard)
 	pp.discardBtn.SetToolTip("Discard Changes")
 	pp.discardBtn.Disable()
 
-	pp.deleteBtn = ttwidget.NewButtonWithIcon("", theme.DeleteIcon(), pp.onDelete)
-	pp.deleteBtn.Importance = widget.LowImportance
+	pp.deleteBtn = newCompactButton(theme.DeleteIcon(), pp.onDelete)
 	pp.deleteBtn.SetToolTip("Delete selected preset")
 	pp.deleteBtn.Disable()
 
 	// Wire up dirty tracking from options panel.
 	pp.app.optionsPanel.OnChanged = pp.markDirty
 
-	return container.NewHBox(pp.presetSelect, pp.saveBtn, pp.discardBtn, pp.deleteBtn)
+	// Wrap the dropdown in a Center container so HBox doesn't stretch it
+	// to match the row's tallest child - the dropdown stays at its natural
+	// (shorter) height while the buttons set the row height. Gaps add
+	// breathing room: between the bordered dropdown and the borderless
+	// buttons, and between the trash and the row's right edge.
+	leftGap := canvas.NewImageFromResource(nil)
+	leftGap.SetMinSize(fyne.NewSize(4, 1))
+	rightGap := canvas.NewImageFromResource(nil)
+	rightGap.SetMinSize(fyne.NewSize(4, 1))
+	return container.NewHBox(container.NewCenter(pp.presetSelect), leftGap, pp.saveBtn, pp.discardBtn, pp.deleteBtn, rightGap)
 }
 
 func (pp *PresetsPanel) presetNames() []string {
@@ -103,7 +111,8 @@ func (pp *PresetsPanel) markUnsaved() {
 }
 
 func (pp *PresetsPanel) updateDeleteState() {
-	if len(pp.presets) == 0 || pp.presetSelect.Selected == "" || pp.presetSelect.Selected == addNewItem {
+	sel := pp.presetSelect.Selected
+	if len(pp.presets) == 0 || sel == "" || sel == addNewItem || sel == untitledLabel {
 		pp.deleteBtn.Disable()
 	} else {
 		pp.deleteBtn.Enable()
@@ -140,12 +149,12 @@ func (pp *PresetsPanel) LoadPresetForDevice(serial string) {
 			pp.presetSelect.SetSelected(presetName) // triggers onSelect
 			return
 		}
-		// Preset was deleted — clean up stale mapping.
+		// Preset was deleted - clean up stale mapping.
 		delete(pp.devicePresets, serial)
 		_ = pp.app.cfg.SaveDevicePresets(pp.devicePresets)
 	}
 
-	// No saved preset for this device — reset to defaults.
+	// No saved preset for this device - reset to defaults.
 	defaults := model.DefaultOptions()
 	pp.app.optionsPanel.SyncFromModel(defaults)
 	pp.app.options = defaults
@@ -161,13 +170,18 @@ func (pp *PresetsPanel) onSelect(name string) {
 		return
 	}
 
-	// "+ New Preset" resets everything to defaults.
+	// "+ New Preset" resets everything to defaults and parks the dropdown
+	// on a placeholder-ish label so the user sees they're in a fresh
+	// (un-saved) state instead of falling back to the "Presets..." prompt.
 	if name == addNewItem {
 		defaults := model.DefaultOptions()
 		pp.app.optionsPanel.SyncFromModel(defaults)
 		pp.app.options = defaults
 		pp.snapshot = defaults
-		pp.presetSelect.ClearSelected()
+		// assign Selected directly so OnChanged doesn't re-fire (no real
+		// preset is being chosen, just the visual placeholder).
+		pp.presetSelect.Selected = untitledLabel
+		pp.presetSelect.Refresh()
 		pp.markUnsaved()
 		pp.updateDeleteState()
 		pp.saveDeviceAssociation("")
@@ -179,6 +193,14 @@ func (pp *PresetsPanel) onSelect(name string) {
 		return
 	}
 
+	// Camera ids are device-specific. If the preset's id isn't in the
+	// current device's list, drop it silently - scrcpy will pick its
+	// default rather than failing at launch with "no such camera".
+	if !pp.app.optionsPanel.IsCameraIDValid(opts.CameraID) {
+		pp.app.logsPanel.Log("[WARN]preset's camera id '" + opts.CameraID + "' isn't on this device - using default")
+		opts.CameraID = ""
+	}
+
 	pp.app.optionsPanel.SyncFromModel(opts)
 	pp.app.options = opts
 	pp.snapshot = opts
@@ -188,58 +210,90 @@ func (pp *PresetsPanel) onSelect(name string) {
 	pp.app.logsPanel.Log("[OK]Loaded: " + name)
 }
 
-// onSave opens a dialog to name and save the current settings as a preset.
+// onSave opens a custom modal to name and save the current settings.
+// Built manually instead of via dialog.NewCustomConfirm so we control the
+// title size, the spacing between sections, and the action-button row.
 func (pp *PresetsPanel) onSave() {
 	nameEntry := widget.NewEntry()
 	nameEntry.SetPlaceHolder("Preset name")
-
-	// Pre-fill with the currently selected preset name for easy overwrite.
-	if sel := pp.presetSelect.Selected; sel != "" && sel != addNewItem {
+	if sel := pp.presetSelect.Selected; sel != "" && sel != addNewItem && sel != untitledLabel {
 		nameEntry.SetText(sel)
 	}
 
-	dlg := dialog.NewForm(
-		"Save Preset",
-		"Save", "Cancel",
-		[]*widget.FormItem{
-			widget.NewFormItem("Name", nameEntry),
-		},
-		func(ok bool) {
-			if !ok {
-				return
-			}
-			name := strings.TrimSpace(nameEntry.Text)
-			if name == "" {
-				pp.app.logsPanel.Log("[WARN]Preset name cannot be empty")
-				return
-			}
-			if name == addNewItem {
-				pp.app.logsPanel.Log("[WARN]Reserved name, choose another")
-				return
-			}
+	c := pp.app.window.Canvas()
+	var modal *widget.PopUp
 
-			var opts model.ScrcpyOptions
-			pp.app.optionsPanel.SyncToModel(&opts)
+	title := newCompactText("Save Preset", theme.ColorNameForeground)
+	title.FontSize = 18
+	title.Bold = true
 
-			pp.presets[name] = opts
-			if err := pp.app.cfg.SavePresets(pp.presets); err != nil {
-				pp.app.logsPanel.Log("[ERROR]" + err.Error())
-				return
-			}
+	nameLabel := newCompactText("Name", theme.ColorNameForeground)
+	nameLabel.Bold = true
 
-			pp.snapshot = opts
-			pp.presetSelect.Options = pp.presetNames()
-			pp.presetSelect.SetSelected(name)
-			pp.presetSelect.Refresh()
-			pp.markClean()
-			pp.updateDeleteState()
-			pp.saveDeviceAssociation(name)
-			pp.app.logsPanel.Log("[OK]Saved: " + name)
-		},
-		pp.app.window,
+	submit := func() {
+		name := strings.TrimSpace(nameEntry.Text)
+		if name == "" {
+			pp.app.logsPanel.Log("[WARN]Preset name cannot be empty")
+			return
+		}
+		if name == addNewItem || name == untitledLabel {
+			pp.app.logsPanel.Log("[WARN]Reserved name, choose another")
+			return
+		}
+
+		var opts model.ScrcpyOptions
+		pp.app.optionsPanel.SyncToModel(&opts)
+
+		pp.presets[name] = opts
+		if err := pp.app.cfg.SavePresets(pp.presets); err != nil {
+			pp.app.logsPanel.Log("[ERROR]" + err.Error())
+			return
+		}
+
+		pp.snapshot = opts
+		pp.presetSelect.Options = pp.presetNames()
+		pp.presetSelect.SetSelected(name)
+		pp.presetSelect.Refresh()
+		pp.markClean()
+		pp.updateDeleteState()
+		pp.saveDeviceAssociation(name)
+		pp.app.logsPanel.Log("[OK]Saved: " + name)
+		modal.Hide()
+	}
+
+	cancelBtn := widget.NewButton("Cancel", func() { modal.Hide() })
+	saveBtn := widget.NewButton("Save", submit)
+	saveBtn.Importance = widget.HighImportance
+	nameEntry.OnSubmitted = func(string) { submit() }
+
+	// Compact text-only buttons (no icons) for a smaller footprint than
+	// the dialog-package confirm/cancel buttons.
+	btnGap := canvas.NewImageFromResource(nil)
+	btnGap.SetMinSize(fyne.NewSize(8, 1))
+	buttons := container.New(layout.NewHBoxLayout(),
+		layout.NewSpacer(), cancelBtn, btnGap, saveBtn,
 	)
-	dlg.Resize(fyne.NewSize(300, 150))
-	dlg.Show()
+
+	// Tight spacers between sections - VBox's default theme.Padding gap
+	// is too much, especially under "Save Preset".
+	titleGap := canvas.NewImageFromResource(nil)
+	titleGap.SetMinSize(fyne.NewSize(1, 4))
+	bodyGap := canvas.NewImageFromResource(nil)
+	bodyGap.SetMinSize(fyne.NewSize(1, 8))
+
+	body := container.NewPadded(container.NewVBox(
+		title,
+		titleGap,
+		nameLabel,
+		nameEntry,
+		bodyGap,
+		buttons,
+	))
+
+	modal = widget.NewModalPopUp(body, c)
+	modal.Resize(fyne.NewSize(380, 0))
+	modal.Show()
+	c.Focus(nameEntry)
 }
 
 // onDiscard restores options to the last loaded/saved state.

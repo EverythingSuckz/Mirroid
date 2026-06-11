@@ -41,9 +41,8 @@ func TestValidate(t *testing.T) {
 		{"valid h265", func(o *ScrcpyOptions) { o.Codec = "h265" }, false},
 		{"valid av1", func(o *ScrcpyOptions) { o.Codec = "av1" }, false},
 		{"valid max values", func(o *ScrcpyOptions) { o.Bitrate = 200; o.MaxFPS = 240; o.Rotation = 3 }, false},
-		{"camera with front facing", func(o *ScrcpyOptions) { o.VideoSource = "camera"; o.CameraFacing = "front" }, false},
-		{"camera with invalid facing", func(o *ScrcpyOptions) { o.VideoSource = "camera"; o.CameraFacing = "selfie" }, true},
-		{"camera with empty facing", func(o *ScrcpyOptions) { o.VideoSource = "camera"; o.CameraFacing = "" }, true},
+		{"camera source no id", func(o *ScrcpyOptions) { o.VideoSource = "camera" }, false},
+		{"camera source with id", func(o *ScrcpyOptions) { o.VideoSource = "camera"; o.CameraID = "1" }, false},
 	}
 
 	for _, tt := range tests {
@@ -100,21 +99,22 @@ func TestBuildCommand(t *testing.T) {
 			contains: []string{"-K", "-M"},
 		},
 		{
-			name:   "camera source defaults to back facing",
+			name:   "camera source no id",
 			serial: "dev1",
 			modify: func(o *ScrcpyOptions) {
 				o.VideoSource = "camera"
 			},
-			contains: []string{"--video-source", "camera", "--camera-facing", "back"},
+			contains: []string{"--video-source", "camera"},
+			excludes: []string{"--camera-id"},
 		},
 		{
-			name:   "camera front facing",
+			name:   "camera with explicit id",
 			serial: "dev1",
 			modify: func(o *ScrcpyOptions) {
 				o.VideoSource = "camera"
-				o.CameraFacing = "front"
+				o.CameraID = "2"
 			},
-			contains: []string{"--video-source", "camera", "--camera-facing", "front"},
+			contains: []string{"--video-source", "camera", "--camera-id", "2"},
 		},
 		{
 			name:   "record file",
