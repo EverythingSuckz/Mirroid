@@ -245,8 +245,11 @@ func (c *Client) Connect(addr string) error {
 	if err != nil {
 		return fmt.Errorf("adb connect %s: %s (%w)", addr, string(out), err)
 	}
-	outStr := string(out)
-	if strings.Contains(outStr, "failed") || strings.Contains(outStr, "error") {
+	// adb exits 0 even when the target port is closed 
+	// (e.g. "cannot connect to X:Y: No connection could be made...")
+	// we just detect success positively instead.
+	outStr := strings.TrimSpace(string(out))
+	if !strings.Contains(outStr, "connected to") {
 		return fmt.Errorf("adb connect %s: %s", addr, outStr)
 	}
 	return nil
