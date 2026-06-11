@@ -132,7 +132,9 @@ func (o *ScrcpyOptions) BuildCommand(scrcpyPath, deviceSerial string) []string {
 		cmd = append(cmd, "--always-on-top")
 	}
 	if o.Rotation > 0 {
-		cmd = append(cmd, "--orientation", strconv.Itoa(o.Rotation))
+		// scrcpy 3.x rejects the legacy 0-3 quarter-turn values; --orientation
+		// now wants degrees (0/90/180/270, with optional flip prefix).
+		cmd = append(cmd, "--orientation", strconv.Itoa(o.Rotation*90))
 	}
 	if o.TurnScreenOff {
 		cmd = append(cmd, "-S")

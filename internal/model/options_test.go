@@ -144,7 +144,7 @@ func TestBuildCommand(t *testing.T) {
 			modify: func(o *ScrcpyOptions) {
 				o.Rotation = 2
 			},
-			contains: []string{"--orientation", "2"},
+			contains: []string{"--orientation", "180"},
 		},
 		{
 			name:   "window title",
