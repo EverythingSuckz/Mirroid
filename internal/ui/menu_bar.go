@@ -179,6 +179,10 @@ func (r *menuButtonRenderer) applyTheme() {
 func menuBarButton(c fyne.Canvas, label string, menu *fyne.Menu) *menuButton {
 	var btn *menuButton
 	btn = newMenuButton(label, func() {
+		// Resolve absolute position upfront. fyne's expiring canvas cache
+		// can race-out between two lookups, so we avoid ShowAtRelativePosition
+		// and use ShowAtPosition instead.
+		abs := fyne.CurrentApp().Driver().AbsolutePositionForObject(btn)
 		popup := widget.NewPopUpMenu(menu, c)
 		prev := popup.OnDismiss
 		popup.OnDismiss = func() {
@@ -187,7 +191,7 @@ func menuBarButton(c fyne.Canvas, label string, menu *fyne.Menu) *menuButton {
 			}
 			btn.setSelected(false)
 		}
-		popup.ShowAtRelativePosition(fyne.NewPos(0, btn.Size().Height), btn)
+		popup.ShowAtPosition(fyne.NewPos(abs.X, abs.Y+btn.Size().Height))
 		btn.setSelected(true)
 	})
 	return btn
