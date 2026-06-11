@@ -150,6 +150,8 @@ func statusColor(s model.DeviceStatus) color.Color {
 		return pillBlue
 	case model.StatusLaunching, model.StatusReconnecting:
 		return pillTeal
+	case model.StatusRetrying:
+		return pillAmber
 	case model.StatusError:
 		return pillRed
 	default:

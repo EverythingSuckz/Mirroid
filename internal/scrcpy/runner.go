@@ -17,14 +17,16 @@ type ProcessState int
 const (
 	StateIdle      ProcessState = iota // no process running
 	StateLaunching                     // process started, waiting for video stream
+	StateRetrying                      // scrcpy hit an error and is auto-retrying with smaller -m
 	StateMirroring                     // video stream confirmed active (Texture: seen)
-	StateError                         // process encountered an error
+	StateError                         // process encountered an error and gave up
 )
 
 // Process wraps a running scrcpy instance.
 type Process struct {
-	cmd    *exec.Cmd
-	serial string
+	cmd         *exec.Cmd
+	serial      string
+	userStopped bool // set by StopFor/StopAll so the exit handler doesn't surface a "scrcpy died" notification
 }
 
 // Runner manages scrcpy processes.
@@ -93,10 +95,37 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 
 	// read output in a goroutine
 	go func() {
+		// most recent ERROR line seen while still launching/retrying. Only
+		// this goroutine touches it: committed to failedSerials if the
+		// process exits without ever reaching StateMirroring, dropped on
+		// Texture: (recovery).
+		var deferredErr string
+
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			line := scanner.Text()
 			logFn(line)
+
+			// scrcpy auto-retries capture failures with progressively smaller
+			// --max-size. We surface "Retrying" as its own state and hold
+			// any subsequent ERROR notification until we know whether
+			// scrcpy recovers or gives up. The retry can happen mid-stream
+			// (after a successful Texture: line), so transition from any
+			// previous state - not just Launching.
+			if strings.Contains(line, "Retrying with -m") {
+				stateChanged := false
+				r.mu.Lock()
+				if r.deviceStates[serial] != StateRetrying {
+					r.deviceStates[serial] = StateRetrying
+					stateChanged = true
+				}
+				r.mu.Unlock()
+				if stateChanged && r.OnStateChange != nil {
+					r.OnStateChange(serial)
+				}
+				continue
+			}
+
 			// detect scrcpy server errors in real-time
 			if strings.Contains(line, "ERROR") {
 				var errMsg string
@@ -106,23 +135,38 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 					errMsg = line
 				}
 				r.mu.Lock()
+				state := r.deviceStates[serial]
+				if state == StateLaunching || state == StateRetrying {
+					r.mu.Unlock()
+					// hold off, scrcpy may recover via retry
+					deferredErr = errMsg
+					continue
+				}
+				// mid-stream error or fresh failure: surface immediately
 				r.failedSerials[serial] = errMsg
 				r.deviceStates[serial] = StateError
 				r.mu.Unlock()
-				// notify immediately so the table status updates
 				if r.OnStateChange != nil {
 					r.OnStateChange(serial)
 				}
 				if r.OnError != nil {
 					r.OnError(serial, errMsg)
 				}
+				continue
 			}
+
 			// detect video stream active (scrcpy window opened)
 			if strings.Contains(line, "Texture:") {
+				deferredErr = ""
 				r.mu.Lock()
-				if r.deviceStates[serial] == StateLaunching || r.deviceStates[serial] == StateError {
+				if r.deviceStates[serial] == StateLaunching ||
+					r.deviceStates[serial] == StateRetrying ||
+					r.deviceStates[serial] == StateError {
 					r.deviceStates[serial] = StateMirroring
 				}
+				// recovered, drop any stale error so the UI doesn't keep
+				// showing it after the stream is back up.
+				delete(r.failedSerials, serial)
 				r.mu.Unlock()
 				if r.OnStateChange != nil {
 					r.OnStateChange(serial)
@@ -150,6 +194,17 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 				break
 			}
 		}
+
+		// commit the deferred error: scrcpy never reached Mirroring and the
+		// stop wasn't user-initiated, so the retries gave up.
+		var fireDeferred string
+		if exitErr != nil && !proc.userStopped && deferredErr != "" {
+			if state := r.deviceStates[serial]; state == StateLaunching || state == StateRetrying {
+				r.failedSerials[serial] = deferredErr
+				fireDeferred = deferredErr
+			}
+		}
+
 		// keep StateError so the UI can show it briefly; it will be
 		// auto-cleared by the next refreshDevices cycle (~3 s).
 		if r.failedSerials[serial] != "" {
@@ -161,6 +216,9 @@ func (r *Runner) Launch(serial string, opts model.ScrcpyOptions, logFn func(stri
 
 		if r.OnStateChange != nil {
 			r.OnStateChange(serial)
+		}
+		if fireDeferred != "" && r.OnError != nil {
+			r.OnError(serial, fireDeferred)
 		}
 	}()
 
@@ -176,6 +234,9 @@ func (r *Runner) StopAll() {
 	r.mu.Lock()
 	procs := make([]*Process, len(r.processes))
 	copy(procs, r.processes)
+	for _, p := range procs {
+		p.userStopped = true
+	}
 	r.mu.Unlock()
 
 	for _, proc := range procs {
@@ -191,6 +252,7 @@ func (r *Runner) StopFor(serial string) {
 	var toKill []*Process
 	for _, p := range r.processes {
 		if p.serial == serial {
+			p.userStopped = true
 			toKill = append(toKill, p)
 		}
 	}

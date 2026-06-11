@@ -28,6 +28,7 @@ var (
 	pillBlue  = color.NRGBA{R: 33, G: 150, B: 243, A: 255}
 	pillRed   = color.NRGBA{R: 239, G: 83, B: 80, A: 255}
 	pillGray  = color.NRGBA{R: 158, G: 158, B: 158, A: 255}
+	pillAmber = color.NRGBA{R: 255, G: 167, B: 38, A: 255} // retrying - between launching (teal) and error (red)
 )
 
 const (
@@ -245,7 +246,7 @@ func (dip *DeviceInfoPanel) refreshActionsLocked() {
 		return
 	}
 	state := dip.app.runner.StateFor(serial)
-	mirroring := state == scrcpy.StateLaunching || state == scrcpy.StateMirroring
+	mirroring := state == scrcpy.StateLaunching || state == scrcpy.StateRetrying || state == scrcpy.StateMirroring
 	if mirroring {
 		dip.mirrorBtn.Hide()
 		dip.stopBtn.Show()
@@ -374,7 +375,7 @@ func (dip *DeviceInfoPanel) newInfoView(serial string, info adb.DeviceInfo) *inf
 	dip.stopBtn.Importance = widget.DangerImportance
 
 	state := dip.app.runner.StateFor(serial)
-	if state == scrcpy.StateLaunching || state == scrcpy.StateMirroring {
+	if state == scrcpy.StateLaunching || state == scrcpy.StateRetrying || state == scrcpy.StateMirroring {
 		dip.mirrorBtn.Hide()
 	} else {
 		dip.stopBtn.Hide()
@@ -432,7 +433,7 @@ func (v *infoView) apply(info adb.DeviceInfo) {
 		v.heroIconBg.SetBrand(brandClr)
 		v.heroIcon.Resource = icons.NewTintedIcon(brandRes, brandClr)
 	} else {
-		// no brand match — fall back to the connected-state green + white phone
+		// no brand match - fall back to the connected-state green + white phone
 		v.heroIconBg.SetBrand(nil)
 		v.heroIcon.Resource = icons.NewTintedIcon(icons.SmartphoneIcon, color.White)
 	}
@@ -526,7 +527,7 @@ func (dip *DeviceInfoPanel) buildErrorView(serial string, loadErr error) fyne.Ca
 	name := dip.deviceDisplayName(serial)
 	heroArea := buildSmallHero(name, "● Error", pillRed)
 
-	msg := widget.NewLabel("Couldn't read device info — is the screen unlocked?")
+	msg := widget.NewLabel("Couldn't read device info - is the screen unlocked?")
 	msg.Alignment = fyne.TextAlignCenter
 	msg.TextStyle = fyne.TextStyle{Italic: true}
 	msg.Wrapping = fyne.TextWrapWord
