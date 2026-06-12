@@ -287,6 +287,46 @@ func TestDevicePanelMultiSelect(t *testing.T) {
 	}
 }
 
+func TestPairedSerialMatch(t *testing.T) {
+	tests := []struct {
+		serial, ip, guid string
+		want             bool
+	}{
+		{"192.168.2.48:40001", "192.168.2.48", "adb-RZ8M81AB-aBcDeF", true},
+		{"192.168.2.48:40001", "192.168.2.48", "", true},
+		{"192.168.2.480:40001", "192.168.2.48", "", false}, // host must match exactly, not as a prefix
+		{"192.168.2.99:40001", "192.168.2.48", "adb-RZ8M81AB-aBcDeF", false},
+		{"adb-RZ8M81AB-aBcDeF._adb-tls-connect._tcp", "192.168.2.48", "adb-RZ8M81AB-aBcDeF", true},
+		{"adb-RZ8M81AB-aBcDeF._adb-tls-connect._tcp", "192.168.2.48", "", false},
+		{"adb-OTHER-zZzZzZ._adb-tls-connect._tcp", "192.168.2.48", "adb-RZ8M81AB-aBcDeF", false},
+		{"ABCD1234", "192.168.2.48", "adb-RZ8M81AB-aBcDeF", false}, // usb serial
+		{"[fe80::1]:40001", "fe80::1", "", true},
+	}
+	for _, tt := range tests {
+		if got := pairedSerialMatch(tt.serial, tt.ip, tt.guid); got != tt.want {
+			t.Errorf("pairedSerialMatch(%q, %q, %q) = %v, want %v", tt.serial, tt.ip, tt.guid, got, tt.want)
+		}
+	}
+}
+
+func TestKnownHostLocked(t *testing.T) {
+	dp := &DevicePanel{devices: []adb.Device{
+		{Serial: "192.168.1.5:5555"},
+		{Serial: "adb-RZ8M81AB-aBcDeF._adb-tls-connect._tcp", Host: "192.168.2.48"},
+		{Serial: "ABCD1234"},
+	}}
+
+	if !dp.knownHostLocked("192.168.1.5") {
+		t.Error("ip:port serial host should match")
+	}
+	if !dp.knownHostLocked("192.168.2.48") {
+		t.Error("stored Host should match when serial is an instance name")
+	}
+	if dp.knownHostLocked("192.168.9.9") {
+		t.Error("unknown host should not match")
+	}
+}
+
 func TestBuildCameraLabelsDisambiguatesDuplicates(t *testing.T) {
 	cams := []scrcpy.CameraInfo{
 		{ID: "0", Facing: "back", Size: "4000x3000"},

@@ -231,7 +231,7 @@ func (a *App) buildMainUI() {
 	a.window.SetContent(fynetooltip.AddWindowToolTipLayer(withMenuBar, a.window.Canvas()))
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go adb.WatchDevices(ctx, 1_000_000_000, func(devices []adb.MdnsDevice) {
+	go adb.WatchDevices(ctx, time.Second, func(devices []adb.MdnsDevice) {
 		a.devicePanel.OnMdnsDevices(devices)
 	})
 

@@ -13,7 +13,7 @@ func (dp *DevicePanel) refreshDevices() {
 	if dp.app.adbClient == nil {
 		return
 	}
-	liveDevices, err := dp.app.adbClient.GetDevices()
+	liveDevices, states, err := dp.app.adbClient.GetDevices()
 	if err != nil {
 		fyne.Do(func() {
 			dp.statusLabel.SetText("Error: " + err.Error())
@@ -77,6 +77,9 @@ func (dp *DevicePanel) refreshDevices() {
 			if d.Manufacturer != "" {
 				dp.devices[idx].Manufacturer = d.Manufacturer
 			}
+			if d.Host != "" {
+				dp.devices[idx].Host = d.Host
+			}
 		} else if idx, exists := knownByModel[d.Model]; d.Model != "" && exists {
 			// same model, different serial (mDNS alias changed) update the existing entry
 			oldSerial := dp.devices[idx].Serial
@@ -84,6 +87,11 @@ func (dp *DevicePanel) refreshDevices() {
 			dp.devices[idx].Source = d.Source
 			if d.Manufacturer != "" {
 				dp.devices[idx].Manufacturer = d.Manufacturer
+			}
+			// keep the last known ip when the live serial is an mdns
+			// instance name (it carries no host)
+			if d.Host != "" {
+				dp.devices[idx].Host = d.Host
 			}
 			// migrate serial-keyed state
 			delete(dp.connectedSet, oldSerial)
@@ -162,6 +170,8 @@ func (dp *DevicePanel) refreshDevices() {
 			dp.app.deviceInfoPanel.LoadDeviceInfo(selectedSerial)
 		})
 	}
+
+	dp.sweepZombieTransports(states)
 }
 
 // SelectedDevice returns the serial of the currently highlighted device (single).

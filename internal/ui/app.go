@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -45,6 +46,11 @@ type App struct {
 
 	// addresses explicitly disconnected by the user -- mDNS won't auto-reconnect these.
 	ignoredAddrs sync.Map
+
+	// true while the pairing window is open; the mDNS watcher stays hands-off
+	// so the pairing flow is the only thing connecting to the phone
+	pairingActive atomic.Bool
+	pairingWin    fyne.Window // singleton pairing window; main thread only
 
 	// ui panels
 	devicePanel     *DevicePanel
@@ -187,7 +193,7 @@ func (a *App) disconnectAliases(devIDs map[string]bool) {
 	if len(devIDs) == 0 {
 		return
 	}
-	remaining, _ := a.adbClient.GetDevices()
+	remaining, _, _ := a.adbClient.GetDevices()
 	for _, d := range remaining {
 		rid := a.adbClient.GetDeviceID(d.Serial)
 		if rid != "" && devIDs[rid] {

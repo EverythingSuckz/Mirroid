@@ -1,12 +1,23 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strings"
+	"time"
 
 	"mirroid/internal/adb"
 )
+
+// after a failed auto-connect, leave the address alone for a while; doomed
+// 1/s retries churn adb's transport table and can wedge the phone's adbd
+const mdnsConnectBackoff = 60 * time.Second
+
+// how long a transport must sit "offline" before the sweep drops it;
+// in-flight handshakes also read "offline", so patience keeps them safe
+const zombieGrace = 15 * time.Second
 
 // parseHostFromAddr extracts the host/IP from an address that may include a port.
 // Returns addr unchanged if no port is present.
@@ -55,6 +66,28 @@ func (dp *DevicePanel) ReconnectDevice(serial string) {
 	go func() {
 		dp.app.logsPanel.Log("Reconnecting to " + serial + "...")
 		err := dp.app.adbClient.Connect(serial)
+		if errors.Is(err, adb.ErrAlreadyConnected) {
+			// a live transport counts as success; a dead one is dropped
+			// so the retry gets a fresh handshake
+			if dp.app.adbClient.TransportState(serial) == "device" {
+				err = nil
+			} else {
+				dp.app.adbClient.DropTransport(serial)
+				err = dp.app.adbClient.Connect(serial)
+				if errors.Is(err, adb.ErrAlreadyConnected) {
+					// a racing connector (watcher, adb auto-connect)
+					// recreated the transport; let it finish
+					err = nil
+				}
+			}
+		}
+		if err == nil {
+			// the user explicitly wants this device back; clear any alias
+			// block left from a disconnect-then-failed-repair sequence
+			if devID := dp.app.adbClient.GetDeviceID(serial); devID != "" {
+				dp.app.ignoredAddrs.Delete("devid:" + devID)
+			}
+		}
 
 		dp.mu.Lock()
 		delete(dp.reconnectingSet, serial)
@@ -107,8 +140,14 @@ func (dp *DevicePanel) RemoveDevice(serial string) {
 	dp.updateList()
 }
 
-// OnMdnsDevices handles devices discovered via mDNS.
+// OnMdnsDevices handles devices discovered via mDNS. it only auto-connects
+// hosts of devices seen before (i.e. already paired): hammering a not-yet-
+// paired phone with doomed connects poisons adb's transport table and is
+// what used to stall post-pair connects until a wireless debugging toggle.
 func (dp *DevicePanel) OnMdnsDevices(mdnsDevices []adb.MdnsDevice) {
+	if dp.app.pairingActive.Load() {
+		return // the pairing flow owns connects while its window is open
+	}
 	for _, md := range mdnsDevices {
 		ip := parseHostFromAddr(md.Addr)
 		if dp.app.isIgnored(ip) {
@@ -116,21 +155,104 @@ func (dp *DevicePanel) OnMdnsDevices(mdnsDevices []adb.MdnsDevice) {
 		}
 
 		dp.mu.Lock()
-		alreadyConnected := dp.connectedSet[md.Addr]
+		skip := dp.connectedSet[md.Addr] || !dp.knownHostLocked(ip) ||
+			time.Now().Before(dp.connectBackoff[md.Addr])
 		dp.mu.Unlock()
+		if skip {
+			continue
+		}
 
-		if !alreadyConnected {
-			if err := dp.app.adbClient.Connect(md.Addr); err == nil {
-				// verify this isn't an alias of a device the user disconnected
-				if devID := dp.app.adbClient.GetDeviceID(md.Addr); devID != "" && dp.app.isIgnored("devid:"+devID) {
-					_ = dp.app.adbClient.Disconnect(md.Addr)
-					continue
-				}
-				dp.app.logsPanel.Log(fmt.Sprintf("mDNS: Connected to %s", md.Addr))
-				go dp.refreshDevices()
-			}
+		// `adb connect` won't re-handshake a stale offline transport
+		if dp.app.adbClient.TransportState(md.Addr) == "offline" {
+			dp.app.adbClient.DropTransport(md.Addr)
+		}
+		err := dp.app.adbClient.Connect(md.Addr)
+		already := errors.Is(err, adb.ErrAlreadyConnected)
+		if already && dp.app.adbClient.TransportState(md.Addr) == "device" {
+			err = nil // live transport, connectedSet is just stale
+		}
+		if err != nil {
+			slog.Debug("mdns auto-connect failed", "addr", md.Addr, "error", err)
+			dp.setBackoff(md.Addr)
+			continue
+		}
+		// verify this isn't an alias of a device the user disconnected
+		if devID := dp.app.adbClient.GetDeviceID(md.Addr); devID != "" && dp.app.isIgnored("devid:"+devID) {
+			_ = dp.app.adbClient.Disconnect(md.Addr)
+			dp.setBackoff(md.Addr) // don't re-dial an ignored alias every tick
+			continue
+		}
+		if !already {
+			dp.app.logsPanel.Log(fmt.Sprintf("mDNS: Connected to %s", md.Addr))
+			go dp.refreshDevices()
 		}
 	}
+}
+
+func (dp *DevicePanel) setBackoff(addr string) {
+	dp.mu.Lock()
+	dp.connectBackoff[addr] = time.Now().Add(mdnsConnectBackoff)
+	dp.mu.Unlock()
+}
+
+// knownHostLocked reports whether any known device lives at this host. the
+// stored Host covers devices whose serial was rewritten to an mdns instance
+// name (which carries no ip).
+func (dp *DevicePanel) knownHostLocked(ip string) bool {
+	for _, d := range dp.devices {
+		if d.Host == ip || parseHostFromAddr(d.Serial) == ip {
+			return true
+		}
+	}
+	return false
+}
+
+// sweepZombieTransports drops network transports stuck "offline" past the
+// grace period. dead wireless transports pile up (one per rotated port) and
+// make every `adb connect` to that address short-circuit to "already
+// connected" without a handshake; instance-name zombies block adb's own
+// auto-connect the same way. states comes from the refresh's own
+// `adb devices` run, so the sweep costs no extra subprocess.
+func (dp *DevicePanel) sweepZombieTransports(states map[string]string) {
+	if states == nil || dp.app.pairingActive.Load() {
+		return // no data, or the pairing flow heals its own device
+	}
+	now := time.Now()
+
+	dp.mu.Lock()
+	var drop []string
+	for serial, state := range states {
+		host := parseHostFromAddr(serial)
+		sweepable := (host != serial && dp.knownHostLocked(host)) ||
+			adb.IsInstanceSerial(serial)
+		if state != "offline" || !sweepable {
+			delete(dp.zombieSince, serial)
+			continue
+		}
+		if first, seen := dp.zombieSince[serial]; !seen {
+			dp.zombieSince[serial] = now
+		} else if now.Sub(first) >= zombieGrace {
+			drop = append(drop, serial)
+			delete(dp.zombieSince, serial)
+		}
+	}
+	for serial := range dp.zombieSince {
+		if _, ok := states[serial]; !ok {
+			delete(dp.zombieSince, serial)
+		}
+	}
+	dp.mu.Unlock()
+
+	if len(drop) == 0 {
+		return
+	}
+	// drops poll adb for up to ~2s each; don't stall the refresh path
+	go func() {
+		for _, serial := range drop {
+			dp.app.logsPanel.Log("Dropping stale transport " + serial)
+			dp.app.adbClient.DropTransport(serial)
+		}
+	}()
 }
 
 // saveKnownDevices persists the known device list to config.
