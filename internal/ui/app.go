@@ -193,7 +193,11 @@ func (a *App) disconnectAliases(devIDs map[string]bool) {
 	if len(devIDs) == 0 {
 		return
 	}
-	remaining, _, _ := a.adbClient.GetDevices()
+	remaining, _, err := a.adbClient.GetDevices()
+	if err != nil {
+		a.logsPanel.Log("[WARN]Alias cleanup skipped: " + err.Error())
+		return
+	}
 	for _, d := range remaining {
 		rid := a.adbClient.GetDeviceID(d.Serial)
 		if rid != "" && devIDs[rid] {
