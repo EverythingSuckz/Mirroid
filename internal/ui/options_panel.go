@@ -319,6 +319,12 @@ func (op *OptionsPanel) refreshCameraList() {
 		op.applyCameraOptions(cached)
 	}
 
+	// scrcpy can't list cameras on a disconnected device; keep the cache
+	// instead of failing loudly on every selection
+	if !op.app.devicePanel.IsConnected(serial) {
+		return
+	}
+
 	op.cameraRefreshBtn.Hide()
 	op.cameraRefreshSpin.Show()
 	op.cameraRefreshSpin.Start()

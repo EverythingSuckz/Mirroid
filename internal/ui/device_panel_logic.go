@@ -96,6 +96,11 @@ func (dp *DevicePanel) refreshDevices() {
 			// migrate serial-keyed state
 			delete(dp.connectedSet, oldSerial)
 			dp.connectedSet[d.Serial] = true
+			// same device under a new serial is not a fresh connection;
+			// keep the toast diff from announcing it twice
+			if oldConnected[oldSerial] {
+				oldConnected[d.Serial] = true
+			}
 			if dp.checkedSerials[oldSerial] {
 				delete(dp.checkedSerials, oldSerial)
 				dp.checkedSerials[d.Serial] = true
