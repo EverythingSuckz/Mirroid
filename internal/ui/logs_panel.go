@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -90,7 +91,19 @@ func (lp *LogsPanel) SetApp(a *App) {
 }
 
 // Log appends a timestamped line and updates the live log window if open.
+// every line is mirrored to slog so the terminal stays in sync.
 func (lp *LogsPanel) Log(text string) {
+	switch {
+	case strings.HasPrefix(text, "[ERROR]"):
+		slog.Error(strings.TrimPrefix(text, "[ERROR]"))
+	case strings.HasPrefix(text, "[WARN]"):
+		slog.Warn(strings.TrimPrefix(text, "[WARN]"))
+	case strings.HasPrefix(text, "[OK]"):
+		slog.Info(strings.TrimPrefix(text, "[OK]"))
+	default:
+		slog.Info(text)
+	}
+
 	ts := time.Now().Format("15:04:05")
 	line := fmt.Sprintf("[%s] %s", ts, text)
 

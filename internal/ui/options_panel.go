@@ -326,7 +326,6 @@ func (op *OptionsPanel) refreshCameraList() {
 	go func() {
 		cams, err := op.app.runner.ListCameras(serial)
 		if err != nil {
-			slog.Warn("scrcpy --list-cameras failed", "serial", serial, "error", err)
 			if op.app.logsPanel != nil {
 				op.app.logsPanel.Log("[WARN]list cameras for " + serial + " failed: " + err.Error())
 			}
