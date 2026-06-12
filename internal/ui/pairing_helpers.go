@@ -27,19 +27,20 @@ const (
 
 // the sole connector while the pairing window is open (the mdns watcher
 // stands down). watches `adb devices` until the paired device shows up,
-// healing dead transports that would block fresh handshakes.
-func doPostPairConnect(ctx context.Context, a *App, device *adb.MdnsDevice, guid string, setStatus func(string)) bool {
+// healing dead transports that would block fresh handshakes. returns the
+// connected serial, or "" when the window closed first.
+func doPostPairConnect(ctx context.Context, a *App, device *adb.MdnsDevice, guid string, setStatus func(string)) string {
 	ip := parseHostFromAddr(device.Addr)
 
 	// one snapshot serves both the success check and the zombie heal:
 	// an "offline" transport makes every `adb connect` short-circuit to
 	// "already connected" without re-handshaking the new pairing key
-	checkAndHeal := func() bool {
+	checkAndHeal := func() string {
 		states := a.adbClient.DeviceStates()
 		for serial, state := range states {
 			if state == "device" && pairedSerialMatch(serial, ip, guid) {
 				a.logsPanel.Log(fmt.Sprintf("[OK]Device connected (%s)", serial))
-				return true
+				return serial
 			}
 		}
 		for serial, state := range states {
@@ -52,7 +53,7 @@ func doPostPairConnect(ctx context.Context, a *App, device *adb.MdnsDevice, guid
 				a.adbClient.DropTransport(serial)
 			}
 		}
-		return false
+		return ""
 	}
 
 	start := time.Now()
@@ -60,8 +61,8 @@ func doPostPairConnect(ctx context.Context, a *App, device *adb.MdnsDevice, guid
 	refused := 0
 
 	for {
-		if checkAndHeal() {
-			return true
+		if serial := checkAndHeal(); serial != "" {
+			return serial
 		}
 
 		switch elapsed := time.Since(start); {
@@ -84,8 +85,8 @@ func doPostPairConnect(ctx context.Context, a *App, device *adb.MdnsDevice, guid
 				err := a.adbClient.Connect(cd.Addr)
 				if err == nil {
 					refused = 0
-					if checkAndHeal() {
-						return true
+					if serial := checkAndHeal(); serial != "" {
+						return serial
 					}
 				} else if !errors.Is(err, adb.ErrAlreadyConnected) {
 					// still advertising on mdns but refusing tcp/tls:
@@ -103,7 +104,7 @@ func doPostPairConnect(ctx context.Context, a *App, device *adb.MdnsDevice, guid
 
 		select {
 		case <-ctx.Done():
-			return false
+			return ""
 		case <-time.After(1 * time.Second):
 		}
 	}

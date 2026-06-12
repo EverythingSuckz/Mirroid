@@ -182,17 +182,25 @@ func (pw *PairingWindow) startQRSession() {
 // the watch survives tab switches (window-scoped); ui writes are session-gated
 func (pw *PairingWindow) finishPairing(session context.Context, device *adb.MdnsDevice, guid string) {
 	pw.app.logsPanel.Log("[OK]Paired!")
-	// pairing is an explicit "i want this device": clear the disconnect blocklist
+	// pairing is an explicit "i want this device": unblock it, and only it
+	ip := parseHostFromAddr(device.Addr)
 	pw.app.ignoredAddrs.Range(func(key, _ any) bool {
-		pw.app.ignoredAddrs.Delete(key)
+		if k, ok := key.(string); ok && parseHostFromAddr(k) == ip {
+			pw.app.ignoredAddrs.Delete(key)
+		}
 		return true
 	})
 	pw.setStatusIf(session, "Paired! Connecting...")
 
-	if !doPostPairConnect(pw.winCtx, pw.app, device, guid, func(s string) {
+	serial := doPostPairConnect(pw.winCtx, pw.app, device, guid, func(s string) {
 		pw.setStatusIf(session, s)
-	}) {
+	})
+	if serial == "" {
 		return // window closed
+	}
+	// the alias block is keyed by hardware id, knowable only now
+	if devID := pw.app.adbClient.GetDeviceID(serial); devID != "" {
+		pw.app.ignoredAddrs.Delete("devid:" + devID)
 	}
 
 	// close unconditionally: the device is connected, the window's job is
