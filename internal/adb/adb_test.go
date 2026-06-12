@@ -10,6 +10,7 @@ func TestParseDeviceStates(t *testing.T) {
 		"192.168.2.11:42405\tdevice\r\n" +
 		"adb-RZ8M81AB-aBcDeF._adb-tls-connect._tcp\tdevice\r\n" +
 		"ABCD1234\tunauthorized\r\n" +
+		"EFGH5678\tno permissions (verify udev rules)\r\n" +
 		"\r\n"
 
 	states := parseDeviceStates(out)
@@ -19,6 +20,9 @@ func TestParseDeviceStates(t *testing.T) {
 		"192.168.2.11:42405": "device",
 		"adb-RZ8M81AB-aBcDeF._adb-tls-connect._tcp": "device",
 		"ABCD1234": "unauthorized",
+		// multi word statuses truncate to the first word; callers only
+		// ever match "device"/"offline" so this must just not be either
+		"EFGH5678": "no",
 	}
 	if len(states) != len(want) {
 		t.Fatalf("got %d entries, want %d: %v", len(states), len(want), states)

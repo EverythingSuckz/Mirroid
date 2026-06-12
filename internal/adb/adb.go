@@ -287,6 +287,11 @@ func (c *Client) DeviceStates() map[string]string {
 	return parseDeviceStates(string(out))
 }
 
+// parseDeviceStates handles both plain and -l output (-l pads with spaces,
+// not tabs, so splitting on whitespace is the only format-safe option).
+// multi word statuses like "no permissions (verify udev rules)" truncate to
+// their first word; that's fine because callers only match the single word
+// states "device" and "offline".
 func parseDeviceStates(out string) map[string]string {
 	states := make(map[string]string)
 	for _, line := range strings.Split(out, "\n") {
@@ -309,7 +314,10 @@ func (c *Client) TransportState(serial string) string {
 // transport removal so the next connect does a fresh handshake.
 func (c *Client) DropTransport(serial string) {
 	_ = c.Disconnect(serial)
-	for i := 0; i < 10; i++ {
+	// overall deadline, not a fixed poll count: each query has its own 10s
+	// timeout, so counting iterations could block for minutes when adb hangs
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
 		// a nil snapshot means the query failed, not that the transport
 		// is gone; keep polling rather than report success
 		if states := c.DeviceStates(); states != nil {
