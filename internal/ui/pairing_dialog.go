@@ -283,8 +283,10 @@ func (pw *PairingWindow) showCodeEntryDialog(device *adb.MdnsDevice) {
 		},
 		pw.window,
 	)
+	codeEntry.OnSubmitted = func(string) { dlg.Submit() }
 	dlg.Resize(fyne.NewSize(350, 160))
 	dlg.Show()
+	pw.window.Canvas().Focus(codeEntry)
 }
 
 func (pw *PairingWindow) setStatus(s string) {
