@@ -76,8 +76,15 @@ func (dp *DevicePanel) ReconnectDevice(serial string) {
 				err = dp.app.adbClient.Connect(serial)
 				if errors.Is(err, adb.ErrAlreadyConnected) {
 					// a racing connector (watcher, adb auto-connect)
-					// recreated the transport; let it finish
-					err = nil
+					// recreated the transport; give its handshake a
+					// moment before judging success or failure
+					for i := 0; i < 6; i++ {
+						if dp.app.adbClient.TransportState(serial) == "device" {
+							err = nil
+							break
+						}
+						time.Sleep(500 * time.Millisecond)
+					}
 				}
 			}
 		}
