@@ -162,7 +162,18 @@ func (dp *DevicePanel) OnMdnsDevices(mdnsDevices []adb.MdnsDevice) {
 		}
 
 		dp.mu.Lock()
-		skip := dp.connectedSet[md.Addr] || !dp.knownHostLocked(ip) ||
+		known := dp.knownHostLocked(ip)
+		if !known && md.Name != "" {
+			// a device saved under its mdns instance serial matches the
+			// announcement by name; connecting by ip repairs its entry
+			for _, d := range dp.devices {
+				if strings.HasPrefix(d.Serial, md.Name) {
+					known = true
+					break
+				}
+			}
+		}
+		skip := dp.connectedSet[md.Addr] || !known ||
 			time.Now().Before(dp.connectBackoff[md.Addr])
 		dp.mu.Unlock()
 		if skip {

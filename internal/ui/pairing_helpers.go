@@ -23,6 +23,7 @@ const (
 	postPairToggleAfter = 30 * time.Second
 	postPairWarnAfter   = 60 * time.Second
 	scanHintAfter       = 60 * time.Second
+	instanceAcceptAfter = 10 * time.Second
 )
 
 // the sole connector while the pairing window is open (the mdns watcher
@@ -32,16 +33,26 @@ const (
 func doPostPairConnect(ctx context.Context, a *App, device *adb.MdnsDevice, guid string, setStatus func(string)) string {
 	ip := parseHostFromAddr(device.Addr)
 
+	var instanceSince time.Time
+
 	// one snapshot serves both the success check and the zombie heal:
 	// an "offline" transport makes every `adb connect` short-circuit to
 	// "already connected" without re-handshaking the new pairing key
 	checkAndHeal := func() string {
 		states := a.adbClient.DeviceStates()
+		instance := ""
 		for serial, state := range states {
-			if state == "device" && pairedSerialMatch(serial, ip, guid) {
+			if state != "device" || !pairedSerialMatch(serial, ip, guid) {
+				continue
+			}
+			// scrcpy and the device list want ip:port serials, so an
+			// instance-name transport (adb's own auto-connect) is only a
+			// fallback while we keep pushing for an ip:port connect
+			if !adb.IsInstanceSerial(serial) {
 				a.logsPanel.Log(fmt.Sprintf("[OK]Device connected (%s)", serial))
 				return serial
 			}
+			instance = serial
 		}
 		for serial, state := range states {
 			// instance-name transports are adb's own auto-connect attempts
@@ -51,6 +62,16 @@ func doPostPairConnect(ctx context.Context, a *App, device *adb.MdnsDevice, guid
 			if state == "offline" && pairedSerialMatch(serial, ip, guid) &&
 				!adb.IsInstanceSerial(serial) {
 				a.adbClient.DropTransport(serial)
+			}
+		}
+		if instance != "" {
+			if instanceSince.IsZero() {
+				instanceSince = time.Now()
+			} else if time.Since(instanceSince) >= instanceAcceptAfter {
+				// ip:port never landed (mdns not visible to us); a working
+				// connection beats a pretty serial
+				a.logsPanel.Log(fmt.Sprintf("[OK]Device connected (%s)", instance))
+				return instance
 			}
 		}
 		return ""
