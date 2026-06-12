@@ -10,6 +10,7 @@ andromirror
 *.test
 *.out
 coverage.html
+.snapshots/
 
 # IDE
 .idea/

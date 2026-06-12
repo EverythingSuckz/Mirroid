@@ -27,6 +27,7 @@ type ScrcpyOptions struct {
 	HIDKeyboard   bool   `json:"hid_keyboard"`
 	HIDMouse      bool   `json:"hid_mouse"`
 	VideoSource   string `json:"video_source"` // display, camera
+	CameraID      string `json:"camera_id"`    // scrcpy camera id (e.g. "0", "1"); empty = scrcpy default
 }
 
 // DefaultOptions returns a ScrcpyOptions with sensible defaults.
@@ -124,7 +125,9 @@ func (o *ScrcpyOptions) BuildCommand(scrcpyPath, deviceSerial string) []string {
 		cmd = append(cmd, "--always-on-top")
 	}
 	if o.Rotation > 0 {
-		cmd = append(cmd, "--orientation", strconv.Itoa(o.Rotation))
+		// scrcpy 3.x rejects the legacy 0-3 quarter-turn values; --orientation
+		// now wants degrees (0/90/180/270, with optional flip prefix).
+		cmd = append(cmd, "--orientation", strconv.Itoa(o.Rotation*90))
 	}
 	if o.TurnScreenOff {
 		cmd = append(cmd, "-S")
@@ -149,6 +152,9 @@ func (o *ScrcpyOptions) BuildCommand(scrcpyPath, deviceSerial string) []string {
 	}
 	if o.VideoSource == VideoSourceCamera {
 		cmd = append(cmd, "--video-source", VideoSourceCamera)
+		if o.CameraID != "" {
+			cmd = append(cmd, "--camera-id", o.CameraID)
+		}
 	}
 
 	return cmd

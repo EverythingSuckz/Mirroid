@@ -70,7 +70,7 @@ func IsDarkBackground(c color.Color) bool {
 }
 
 // perceivedBrightness is a fast sRGB-weighted approximation, not WCAG
-// relative luminance — it skips the gamma-to-linear step. Thresholds in
+// relative luminance - it skips the gamma-to-linear step. Thresholds in
 // IsLightColor / IsDarkColor / IsDarkBackground are tuned against this scale.
 func perceivedBrightness(c color.Color) float64 {
 	nr := color.NRGBAModel.Convert(c).(color.NRGBA)

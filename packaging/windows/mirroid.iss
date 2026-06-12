@@ -73,7 +73,7 @@ begin
     Exec(AdbPath, 'kill-server', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
   // any leftover adb/scrcpy with the exe still mapped will block InstallDelete
-  // and trigger a rollback — RestartManager misses background daemons
+  // and trigger a rollback - RestartManager misses background daemons
   Exec('taskkill.exe', '/F /IM adb.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM scrcpy.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(500);

@@ -55,7 +55,6 @@ func TestOptionsPanelSyncRoundTrip(t *testing.T) {
 		AlwaysOnTop:   true,
 		Rotation:      2,
 		TurnScreenOff: true,
-		RecordFile:    "test.mp4",
 		WindowTitle:   "Test Title",
 		ClipboardSync: false,
 		StayAwake:     true,
@@ -100,9 +99,6 @@ func TestOptionsPanelSyncRoundTrip(t *testing.T) {
 	}
 	if !result.TurnScreenOff {
 		t.Error("TurnScreenOff should be true")
-	}
-	if result.RecordFile != "test.mp4" {
-		t.Errorf("RecordFile: got %s, want test.mp4", result.RecordFile)
 	}
 	if result.WindowTitle != "Test Title" {
 		t.Errorf("WindowTitle: got %s, want Test Title", result.WindowTitle)
@@ -212,12 +208,12 @@ func TestDevicePanelBuild(t *testing.T) {
 		t.Fatal("DevicePanel.Build() returned nil")
 	}
 
-	// No devices — SelectedDevice should return empty
+	// No devices - SelectedDevice should return empty
 	if got := dp.SelectedDevice(); got != "" {
 		t.Errorf("SelectedDevice with no devices: got %q, want empty", got)
 	}
 
-	// No devices — SelectedDevices should return empty
+	// No devices - SelectedDevices should return empty
 	if got := dp.SelectedDevices(); len(got) != 0 {
 		t.Errorf("SelectedDevices with no devices: got %v, want empty", got)
 	}
@@ -288,6 +284,29 @@ func TestDevicePanelMultiSelect(t *testing.T) {
 	}
 	if len(gotDisc) == 1 && gotDisc[0] != "192.168.1.5:5555" {
 		t.Errorf("SelectedDisconnectedDevices: got %q, want 192.168.1.5:5555", gotDisc[0])
+	}
+}
+
+func TestBuildCameraLabelsDisambiguatesDuplicates(t *testing.T) {
+	cams := []scrcpy.CameraInfo{
+		{ID: "0", Facing: "back", Size: "4000x3000"},
+		{ID: "2", Facing: "back", Size: "4000x3000"},
+		{ID: "1", Facing: "front", Size: "3264x2448"},
+	}
+
+	labels, mapping := buildCameraLabels(cams)
+
+	if len(labels) != 4 {
+		t.Fatalf("labels: got %d, want 4 (default + 3 cameras)", len(labels))
+	}
+	if got := mapping["Back · 4000x3000 (0)"]; got != "0" {
+		t.Errorf("first duplicate: got id %q, want 0", got)
+	}
+	if got := mapping["Back · 4000x3000 (2)"]; got != "2" {
+		t.Errorf("second duplicate: got id %q, want 2", got)
+	}
+	if got := mapping["Front · 3264x2448"]; got != "1" {
+		t.Errorf("unique label should stay unsuffixed: got id %q, want 1", got)
 	}
 }
 

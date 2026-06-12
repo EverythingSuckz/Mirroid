@@ -6,6 +6,7 @@ type DeviceStatus string
 const (
 	StatusConnected    DeviceStatus = "Connected"
 	StatusLaunching    DeviceStatus = "Launching"
+	StatusRetrying     DeviceStatus = "Retrying"
 	StatusMirroring    DeviceStatus = "Mirroring"
 	StatusError        DeviceStatus = "Error"
 	StatusDisconnected DeviceStatus = "Disconnected"

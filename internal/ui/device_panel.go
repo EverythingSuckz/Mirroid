@@ -28,15 +28,16 @@ type DevicePanel struct {
 	deviceList     *widget.List
 	selectAllCheck *widget.Check
 	statusLabel    *widget.Label
-	devices        []adb.Device      // all known devices (connected + disconnected)
-	connectedSet   map[string]bool   // serials currently reported by adb
-	checkedSerials map[string]bool   // serials checked for batch actions
-	reconnectingSet map[string]bool  // serials currently reconnecting
+	devices         []adb.Device      // all known devices (connected + disconnected)
+	connectedSet    map[string]bool   // serials currently reported by adb
+	checkedSerials  map[string]bool   // serials checked for batch actions
+	reconnectingSet map[string]bool   // serials currently reconnecting
 	reconnectErrors map[string]string // serials that failed to reconnect
-	lastSelected   string
-	mu             sync.Mutex
+	lastSelected    string
+	firstSync       bool // true after the first refreshDevices completes
+	mu              sync.Mutex
 
-	// bulk action buttons — context-sensitive based on checked devices
+	// bulk action buttons - context-sensitive based on checked devices
 	mirrorBtn     *ttwidget.Button
 	stopBtn       *ttwidget.Button
 	disconnectBtn *ttwidget.Button
@@ -142,6 +143,9 @@ func (dp *DevicePanel) Build() fyne.CanvasObject {
 		}
 		if changed && dp.app.presetsPanel != nil {
 			dp.app.presetsPanel.LoadPresetForDevice(serial)
+		}
+		if changed && dp.app.optionsPanel != nil {
+			dp.app.optionsPanel.onDeviceChanged(serial)
 		}
 	}
 
@@ -320,6 +324,8 @@ func (dp *DevicePanel) computeStatus(serial string, connected, reconnecting, has
 				return model.StatusError
 			case scrcpy.StateLaunching:
 				return model.StatusLaunching
+			case scrcpy.StateRetrying:
+				return model.StatusRetrying
 			case scrcpy.StateMirroring:
 				return model.StatusMirroring
 			}
@@ -418,7 +424,7 @@ func (dp *DevicePanel) updateList() {
 			}
 
 			if lastSel == "" {
-				// Force fresh selection — UnselectAll first so Select(0) fires OnSelected
+				// Force fresh selection - UnselectAll first so Select(0) fires OnSelected
 				dp.deviceList.UnselectAll()
 				dp.deviceList.Select(0)
 			} else {
@@ -434,7 +440,7 @@ func (dp *DevicePanel) updateList() {
 					dp.mu.Lock()
 					dp.lastSelected = ""
 					dp.mu.Unlock()
-					// Force fresh selection — UnselectAll first so Select(0) fires OnSelected
+					// Force fresh selection - UnselectAll first so Select(0) fires OnSelected
 					dp.deviceList.UnselectAll()
 					dp.deviceList.Select(0)
 				}

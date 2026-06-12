@@ -25,11 +25,11 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# ── Pinned versions (keep in sync with .github/workflows/release.yml) ──
+# -- Pinned versions (keep in sync with .github/workflows/release.yml) --
 $ScrcpyVersion        = "3.3.4"
 $PlatformToolsVersion = "37.0.0"
 
-# ── Paths ──
+# -- Paths --
 # Script lives at packaging/fetch-deps.ps1, so one level up = project root
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 if (-not $ProjectRoot) {
@@ -38,15 +38,15 @@ if (-not $ProjectRoot) {
 $BundledDir = Join-Path $ProjectRoot "_bundled"
 $TempDir    = Join-Path $env:TEMP "mirroid-deps"
 
-# ── URLs ──
+# -- URLs --
 $AdbUrl    = "https://dl.google.com/android/repository/platform-tools_r${PlatformToolsVersion}-win.zip"
 $ScrcpyUrl = "https://github.com/Genymobile/scrcpy/releases/download/v${ScrcpyVersion}/scrcpy-win64-v${ScrcpyVersion}.zip"
 
-# ── Helpers ──
+# -- Helpers --
 function Write-Step($msg) { Write-Host "  -> $msg" -ForegroundColor Cyan }
 function Write-Done($msg) { Write-Host "  OK $msg" -ForegroundColor Green }
 
-# ── Main ──
+# -- Main --
 Write-Host ""
 Write-Host "Mirroid dependency fetcher" -ForegroundColor Yellow
 Write-Host "  scrcpy:         v$ScrcpyVersion"
@@ -70,7 +70,7 @@ if (Test-Path $BundledDir) {
 New-Item -ItemType Directory -Force -Path $BundledDir | Out-Null
 New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
 
-# ── Download and extract adb ──
+# -- Download and extract adb --
 Write-Step "Downloading adb platform-tools r$PlatformToolsVersion..."
 $adbZip = Join-Path $TempDir "platform-tools.zip"
 Invoke-WebRequest -Uri $AdbUrl -OutFile $adbZip -UseBasicParsing
@@ -84,7 +84,7 @@ Copy-Item (Join-Path $adbExtract "platform-tools\AdbWinApi.dll")     $BundledDir
 Copy-Item (Join-Path $adbExtract "platform-tools\AdbWinUsbApi.dll")  $BundledDir
 Write-Done "adb.exe + DLLs"
 
-# ── Download and extract scrcpy ──
+# -- Download and extract scrcpy --
 Write-Step "Downloading scrcpy v$ScrcpyVersion..."
 $scrcpyZip = Join-Path $TempDir "scrcpy.zip"
 Invoke-WebRequest -Uri $ScrcpyUrl -OutFile $scrcpyZip -UseBasicParsing
@@ -93,7 +93,7 @@ Write-Step "Extracting scrcpy files..."
 $scrcpyExtract = Join-Path $TempDir "scrcpy"
 Expand-Archive -Path $scrcpyZip -DestinationPath $scrcpyExtract -Force
 
-# The zip contains a top-level directory like scrcpy-win64-v3.3.4/ — copy its contents flat
+# The zip contains a top-level directory like scrcpy-win64-v3.3.4/ - copy its contents flat
 $scrcpyInner = Get-ChildItem $scrcpyExtract -Directory | Select-Object -First 1
 if ($scrcpyInner) {
     Copy-Item (Join-Path $scrcpyInner.FullName "*") $BundledDir -Recurse -Force
@@ -102,16 +102,16 @@ if ($scrcpyInner) {
 }
 Write-Done "scrcpy + DLLs"
 
-# ── Remove unnecessary scrcpy extras ──
+# -- Remove unnecessary scrcpy extras --
 foreach ($junk in @("icon.png", "open_a_terminal_here.bat", "scrcpy-console.bat", "scrcpy-noconsole.vbs")) {
     $junkPath = Join-Path $BundledDir $junk
     if (Test-Path $junkPath) { Remove-Item -Force $junkPath }
 }
 
-# ── Cleanup temp ──
+# -- Cleanup temp --
 Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue
 
-# ── Summary ──
+# -- Summary --
 $files = Get-ChildItem $BundledDir -File
 Write-Host ""
 Write-Host "Done! $($files.Count) files in _bundled/:" -ForegroundColor Green
@@ -120,7 +120,7 @@ foreach ($f in $files) {
     Write-Host "  $($f.Name) ($sizeMB MB)"
 }
 $totalMB = [math]::Round(($files | Measure-Object -Property Length -Sum).Sum / 1MB, 1)
-Write-Host "  ────────────"
+Write-Host "  ------------"
 Write-Host "  Total: $totalMB MB"
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow

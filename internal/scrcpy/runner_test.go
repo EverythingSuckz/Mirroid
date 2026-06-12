@@ -9,7 +9,7 @@ func TestStateFor_DefaultIsIdle(t *testing.T) {
 	r := NewRunner("")
 
 	// Unknown serials must return StateIdle (zero value).
-	// The UI status switch depends on this — if the zero value is wrong,
+	// The UI status switch depends on this - if the zero value is wrong,
 	// every device shows the wrong status.
 	got := r.StateFor("unknown-serial")
 	if got != StateIdle {
@@ -46,13 +46,13 @@ func TestClearErrorFor_ClearsDeviceState(t *testing.T) {
 func TestClearExitedErrors_ClearsOnlyExitedErrors(t *testing.T) {
 	r := NewRunner("")
 
-	// dev1: exited with error (no running process) — should be cleared
+	// dev1: exited with error (no running process) - should be cleared
 	r.mu.Lock()
 	r.failedSerials["dev1"] = "connection refused"
 	r.deviceStates["dev1"] = StateError
 	r.mu.Unlock()
 
-	// dev2: still running with error (e.g., non-fatal audio error) — must NOT be cleared
+	// dev2: still running with error (e.g., non-fatal audio error) - must NOT be cleared
 	cmd := exec.Command("echo") // dummy process
 	r.mu.Lock()
 	r.processes = append(r.processes, &Process{cmd: cmd, serial: "dev2"})
@@ -60,7 +60,7 @@ func TestClearExitedErrors_ClearsOnlyExitedErrors(t *testing.T) {
 	r.deviceStates["dev2"] = StateError
 	r.mu.Unlock()
 
-	// dev3: actively mirroring — must NOT be touched
+	// dev3: actively mirroring - must NOT be touched
 	r.mu.Lock()
 	r.deviceStates["dev3"] = StateMirroring
 	r.mu.Unlock()
@@ -75,7 +75,7 @@ func TestClearExitedErrors_ClearsOnlyExitedErrors(t *testing.T) {
 		t.Errorf("dev1: LastErrorFor = %q, want empty", got)
 	}
 
-	// dev2 still has a process — error should persist
+	// dev2 still has a process - error should persist
 	if got := r.StateFor("dev2"); got != StateError {
 		t.Errorf("dev2: StateFor = %d, want StateError (%d)", got, StateError)
 	}
@@ -83,7 +83,7 @@ func TestClearExitedErrors_ClearsOnlyExitedErrors(t *testing.T) {
 		t.Errorf("dev2: LastErrorFor = %q, want %q", got, "audio error")
 	}
 
-	// dev3 is mirroring — untouched
+	// dev3 is mirroring - untouched
 	if got := r.StateFor("dev3"); got != StateMirroring {
 		t.Errorf("dev3: StateFor = %d, want StateMirroring (%d)", got, StateMirroring)
 	}
@@ -102,7 +102,7 @@ func TestClearErrorFor_DoesNotClearNonErrorState(t *testing.T) {
 	r.ClearErrorFor("dev1")
 
 	// The error message should be cleared, but the device state must
-	// remain StateMirroring — clearing an error tooltip must not break
+	// remain StateMirroring - clearing an error tooltip must not break
 	// an active mirroring session.
 	if got := r.StateFor("dev1"); got != StateMirroring {
 		t.Errorf("after ClearErrorFor: StateFor(dev1) = %d, want StateMirroring (%d)", got, StateMirroring)
@@ -111,3 +111,4 @@ func TestClearErrorFor_DoesNotClearNonErrorState(t *testing.T) {
 		t.Errorf("after ClearErrorFor: LastErrorFor(dev1) = %q, want empty", got)
 	}
 }
+

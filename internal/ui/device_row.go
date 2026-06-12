@@ -2,7 +2,6 @@ package ui
 
 import (
 	"image/color"
-	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -90,15 +89,7 @@ func (r *deviceRow) bind(d adb.Device, status model.DeviceStatus, selected, chec
 		r.nameTxt.Color = theme.Color(theme.ColorNameForeground)
 	}
 
-	displayName := d.Model
-	if displayName == "" {
-		displayName = d.Serial
-	}
-	if d.Manufacturer != "" &&
-		!strings.HasPrefix(strings.ToLower(displayName), strings.ToLower(d.Manufacturer)) {
-		displayName = d.Manufacturer + " " + displayName
-	}
-	r.nameTxt.Text = displayName
+	r.nameTxt.Text = deviceFriendlyName(d)
 	r.nameTxt.Refresh()
 
 	if brand := icons.BrandIcon(d.Manufacturer); brand != nil {

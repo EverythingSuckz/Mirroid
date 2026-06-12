@@ -94,7 +94,7 @@ func TestDetect_ConfigPath(t *testing.T) {
 }
 
 func TestDetect_PriorityOrder(t *testing.T) {
-	// Both app dir and config path have the binary — app dir should win
+	// Both app dir and config path have the binary - app dir should win
 	appDir := t.TempDir()
 	configDir := t.TempDir()
 	name := binaryFileName(BinADB)
