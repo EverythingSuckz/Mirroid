@@ -98,28 +98,37 @@ func doPostPairConnect(ctx context.Context, a *App, device *adb.MdnsDevice, guid
 			a.logsPanel.Log("[WARN]" + ip + " paired but hasn't connected yet; still watching")
 		}
 
-		if found, err := adb.DiscoverDevices(ctx); err == nil {
-			for _, cd := range found {
-				if parseHostFromAddr(cd.Addr) != ip {
-					continue
-				}
-				err := a.adbClient.Connect(cd.Addr)
-				if err == nil {
-					refused = 0
-					if serial := checkAndHeal(); serial != "" {
-						return serial
-					}
-				} else if !errors.Is(err, adb.ErrAlreadyConnected) {
-					// still advertising on mdns but refusing tcp/tls:
-					// the phone's adbd is wedged, only a toggle revives it
-					refused++
-					if refused == 3 {
-						a.logsPanel.Log("[WARN]" + cd.Addr + " refused the connection: " + err.Error())
-						hinted, toggleHinted = true, true
-						setStatus("The phone isn't accepting connections. Toggle Wireless Debugging off and on.")
+		// find the connect address: adb's own resolver first (it sees the
+		// announcement our zeroconf browse misses on multi-nic windows, which
+		// is what otherwise strands us on the instance-name fallback), then
+		// grandcat as a backup.
+		addr := a.adbClient.MdnsConnectAddr(guid)
+		if addr == "" {
+			if found, err := adb.DiscoverDevices(ctx); err == nil {
+				for _, cd := range found {
+					if parseHostFromAddr(cd.Addr) == ip {
+						addr = cd.Addr
+						break
 					}
 				}
-				break
+			}
+		}
+		if addr != "" {
+			err := a.adbClient.Connect(addr)
+			if err == nil || errors.Is(err, adb.ErrAlreadyConnected) {
+				refused = 0
+				if serial := checkAndHeal(); serial != "" {
+					return serial
+				}
+			} else {
+				// still advertising on mdns but refusing tcp/tls:
+				// the phone's adbd is wedged, only a toggle revives it
+				refused++
+				if refused == 3 {
+					a.logsPanel.Log("[WARN]" + addr + " refused the connection: " + err.Error())
+					hinted, toggleHinted = true, true
+					setStatus("The phone isn't accepting connections. Toggle Wireless Debugging off and on.")
+				}
 			}
 		}
 

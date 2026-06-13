@@ -329,6 +329,43 @@ func (c *Client) DropTransport(serial string) {
 	}
 }
 
+// MdnsConnectAddr returns the ip:port that adb's own mdns resolver holds for
+// the _adb-tls-connect service of the given guid instance, or "". adb's
+// resolver sees announcements our zeroconf browse can miss (multi-nic
+// windows), so this is the reliable source for the connect port after pairing.
+func (c *Client) MdnsConnectAddr(guid string) string {
+	if guid == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), adbTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.adbPath, "mdns", "services")
+	platform.HideConsole(cmd)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return parseMdnsConnectAddr(string(out), guid)
+}
+
+// parses `adb mdns services` lines ("<instance>\t<service>\t<ip:port>") for
+// the connect-service address of the given guid instance.
+func parseMdnsConnectAddr(out, guid string) string {
+	if guid == "" {
+		return ""
+	}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || !strings.Contains(fields[1], "_adb-tls-connect") {
+			continue
+		}
+		if (fields[0] == guid || strings.HasPrefix(fields[0], guid)) && isIPPort(fields[2]) {
+			return fields[2]
+		}
+	}
+	return ""
+}
+
 // Connect runs `adb connect <addr>`. Returns ErrAlreadyConnected when adb
 // reused an existing transport instead of handshaking.
 func (c *Client) Connect(addr string) error {

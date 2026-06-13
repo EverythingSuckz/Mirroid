@@ -34,6 +34,27 @@ func TestParseDeviceStates(t *testing.T) {
 	}
 }
 
+func TestParseMdnsConnectAddr(t *testing.T) {
+	out := "List of discovered mdns services\r\n" +
+		"adb-e377a5d7-JClw3Z\t_adb-tls-pairing._tcp\t192.168.2.11:37113\r\n" +
+		"adb-e377a5d7-JClw3Z\t_adb-tls-connect._tcp\t192.168.2.11:43439\r\n" +
+		"adb-OTHER-zZ\t_adb-tls-connect._tcp\t192.168.2.50:40001\r\n"
+
+	if got := parseMdnsConnectAddr(out, "adb-e377a5d7-JClw3Z"); got != "192.168.2.11:43439" {
+		t.Errorf("matched guid: got %q, want 192.168.2.11:43439", got)
+	}
+	// must pick the connect service, not the pairing service of the same guid
+	if got := parseMdnsConnectAddr(out, "adb-OTHER-zZ"); got != "192.168.2.50:40001" {
+		t.Errorf("other guid: got %q, want 192.168.2.50:40001", got)
+	}
+	if got := parseMdnsConnectAddr(out, "adb-NOPE"); got != "" {
+		t.Errorf("absent guid: got %q, want empty", got)
+	}
+	if got := parseMdnsConnectAddr(out, ""); got != "" {
+		t.Errorf("empty guid should not match: got %q", got)
+	}
+}
+
 func TestParsePairGuid(t *testing.T) {
 	tests := []struct {
 		input string
