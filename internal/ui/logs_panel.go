@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -23,7 +24,6 @@ const (
 type LogsPanel struct {
 	app      *App
 	logLines []string
-	maxLines int
 	mu       sync.Mutex
 
 	// live log window references
@@ -80,9 +80,7 @@ func (e *readOnlyEntry) TypedShortcut(s fyne.Shortcut) {
 }
 
 func NewLogsPanel() *LogsPanel {
-	return &LogsPanel{
-		maxLines: maxLogLines,
-	}
+	return &LogsPanel{}
 }
 
 func (lp *LogsPanel) SetApp(a *App) {
@@ -90,15 +88,26 @@ func (lp *LogsPanel) SetApp(a *App) {
 }
 
 // Log appends a timestamped line and updates the live log window if open.
+// every line is mirrored to slog so the terminal stays in sync.
 func (lp *LogsPanel) Log(text string) {
+	switch {
+	case strings.HasPrefix(text, "[ERROR]"):
+		slog.Error(strings.TrimPrefix(text, "[ERROR]"))
+	case strings.HasPrefix(text, "[WARN]"):
+		slog.Warn(strings.TrimPrefix(text, "[WARN]"))
+	case strings.HasPrefix(text, "[OK]"):
+		slog.Info(strings.TrimPrefix(text, "[OK]"))
+	default:
+		slog.Info(text)
+	}
+
 	ts := time.Now().Format("15:04:05")
 	line := fmt.Sprintf("[%s] %s", ts, text)
 
 	lp.mu.Lock()
 	lp.logLines = append(lp.logLines, line)
-	if len(lp.logLines) > lp.maxLines {
-		// sorry old logs, it's time to go. survival of the newest
-		lp.logLines = lp.logLines[len(lp.logLines)-lp.maxLines:]
+	if len(lp.logLines) > maxLogLines {
+		lp.logLines = lp.logLines[len(lp.logLines)-maxLogLines:]
 	}
 	lp.mu.Unlock()
 

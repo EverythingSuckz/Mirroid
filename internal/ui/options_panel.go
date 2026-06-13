@@ -319,6 +319,12 @@ func (op *OptionsPanel) refreshCameraList() {
 		op.applyCameraOptions(cached)
 	}
 
+	// scrcpy can't list cameras on a disconnected device; keep the cache
+	// instead of failing loudly on every selection
+	if !op.app.devicePanel.IsConnected(serial) {
+		return
+	}
+
 	op.cameraRefreshBtn.Hide()
 	op.cameraRefreshSpin.Show()
 	op.cameraRefreshSpin.Start()
@@ -326,7 +332,6 @@ func (op *OptionsPanel) refreshCameraList() {
 	go func() {
 		cams, err := op.app.runner.ListCameras(serial)
 		if err != nil {
-			slog.Warn("scrcpy --list-cameras failed", "serial", serial, "error", err)
 			if op.app.logsPanel != nil {
 				op.app.logsPanel.Log("[WARN]list cameras for " + serial + " failed: " + err.Error())
 			}

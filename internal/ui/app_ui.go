@@ -83,14 +83,8 @@ func (a *App) buildMainUI() {
 		}),
 	)
 
-	// -----------------------------------------------------------------------
-	// we render our own menu bar (see top toolbar below) instead of using
-	// fyne's native main menu 
-	// 
-	// this way, the notification bell can sit on
-	// the same row as the menu items. macOS still
-	// gets its default app menu (About / Quit) automatically.
-	// -----------------------------------------------------------------------
+	// our own menu bar (not fyne's native one) so the notification bell can
+	// share the row. macOS still gets its default app menu automatically.
 
 	// empty state
 	emptyIcon := canvas.NewImageFromResource(theme.ComputerIcon())
@@ -231,7 +225,7 @@ func (a *App) buildMainUI() {
 	a.window.SetContent(fynetooltip.AddWindowToolTipLayer(withMenuBar, a.window.Canvas()))
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go adb.WatchDevices(ctx, 1_000_000_000, func(devices []adb.MdnsDevice) {
+	go adb.WatchDevices(ctx, time.Second, func(devices []adb.MdnsDevice) {
 		a.devicePanel.OnMdnsDevices(devices)
 	})
 

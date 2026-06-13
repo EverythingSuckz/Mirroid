@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -28,13 +29,15 @@ type DevicePanel struct {
 	deviceList     *widget.List
 	selectAllCheck *widget.Check
 	statusLabel    *widget.Label
-	devices         []adb.Device      // all known devices (connected + disconnected)
-	connectedSet    map[string]bool   // serials currently reported by adb
-	checkedSerials  map[string]bool   // serials checked for batch actions
-	reconnectingSet map[string]bool   // serials currently reconnecting
-	reconnectErrors map[string]string // serials that failed to reconnect
+	devices         []adb.Device         // all known devices (connected + disconnected)
+	connectedSet    map[string]bool      // serials currently reported by adb
+	checkedSerials  map[string]bool      // serials checked for batch actions
+	reconnectingSet map[string]bool      // serials currently reconnecting
+	reconnectErrors map[string]string    // serials that failed to reconnect
+	connectBackoff  map[string]time.Time // addrs to leave alone until this time
+	zombieSince     map[string]time.Time // offline transports and when first seen
 	lastSelected    string
-	firstSync       bool // true after the first refreshDevices completes
+	firstSync       bool // set after the first refresh; suppresses startup connect/disconnect toasts until then
 	mu              sync.Mutex
 
 	// bulk action buttons - context-sensitive based on checked devices
@@ -55,6 +58,8 @@ func NewDevicePanel(app *App) *DevicePanel {
 		checkedSerials:  make(map[string]bool),
 		reconnectingSet: make(map[string]bool),
 		reconnectErrors: make(map[string]string),
+		connectBackoff:  make(map[string]time.Time),
+		zombieSince:     make(map[string]time.Time),
 	}
 	// Load previously known devices from config
 	if app.cfg != nil {

@@ -3,7 +3,9 @@ package adb
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os/exec"
 	"strings"
@@ -13,6 +15,10 @@ import (
 	"mirroid/internal/model"
 	"mirroid/internal/platform"
 )
+
+// ErrAlreadyConnected: adb found an existing transport for the address and
+// skipped the TLS handshake; the transport may be a dead "offline" one.
+var ErrAlreadyConnected = errors.New("already connected")
 
 const (
 	adbTimeout     = 10 * time.Second // quick queries (devices, connect, disconnect, getprop)
@@ -25,14 +31,9 @@ type Device struct {
 	Model        string `json:"model"`
 	Manufacturer string `json:"manufacturer,omitempty"`
 	Source       string `json:"source"` // "usb", "wireless", "mdns"
-}
-
-// String returns a display-friendly label.
-func (d Device) String() string {
-	if d.Model != "" {
-		return fmt.Sprintf("%s (%s)", d.Model, d.Serial)
-	}
-	return d.Serial
+	// last seen ip of a wireless device; survives the serial being
+	// rewritten to an mdns instance name, so host matching keeps working
+	Host string `json:"host,omitempty"`
 }
 
 // isIPPort returns true if serial looks like a real IP:port address
@@ -43,6 +44,18 @@ func isIPPort(serial string) bool {
 		return false
 	}
 	return net.ParseIP(host) != nil
+}
+
+// IsInstanceSerial reports whether serial is an mdns instance name
+// ("adb-XXXX._adb-tls-connect._tcp") registered by adb's own auto-connect.
+func IsInstanceSerial(serial string) bool {
+	return strings.HasSuffix(serial, "._adb-tls-connect._tcp")
+}
+
+// IsWireless reports whether a serial is a wireless target (ip:port or an
+// mdns instance name) rather than a usb serial.
+func IsWireless(serial string) bool {
+	return strings.Contains(serial, ":") || IsInstanceSerial(serial)
 }
 
 type Client struct {
@@ -72,16 +85,19 @@ func (c *Client) Path() string {
 	return c.adbPath
 }
 
-// GetDevices runs `adb devices -l` and parses the output.
-func (c *Client) GetDevices() ([]Device, error) {
+// GetDevices runs `adb devices -l` once, returning the connected devices
+// plus the full serial -> state map (which also covers offline/unauthorized
+// transports that the device list filters out).
+func (c *Client) GetDevices() ([]Device, map[string]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), adbTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, c.adbPath, "devices", "-l")
 	platform.HideConsole(cmd)
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("adb devices: %w", err)
+		return nil, nil, fmt.Errorf("adb devices: %w", err)
 	}
+	states := parseDeviceStates(string(out))
 
 	var devices []Device
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
@@ -114,8 +130,12 @@ func (c *Client) GetDevices() ([]Device, error) {
 			}
 		}
 
+		host := ""
+		if isIPPort(serial) {
+			host, _, _ = net.SplitHostPort(serial)
+		}
 		source := model.SourceUSB
-		if strings.Contains(serial, ":") {
+		if IsWireless(serial) {
 			source = model.SourceWireless
 		}
 
@@ -123,6 +143,7 @@ func (c *Client) GetDevices() ([]Device, error) {
 			Serial: serial,
 			Model:  devModel,
 			Source: source,
+			Host:   host,
 		})
 	}
 
@@ -151,7 +172,7 @@ func (c *Client) GetDevices() ([]Device, error) {
 	// fetch manufacturer + model per device in parallel; tolerate failures
 	c.fillDeviceProperties(result)
 
-	return result, nil
+	return result, states, nil
 }
 
 // fillDeviceProperties populates the Manufacturer field and refreshes Model
@@ -218,41 +239,155 @@ func (c *Client) fillDeviceProperties(devices []Device) {
 	wg.Wait()
 }
 
-// Pair runs `adb pair <addr> <password>`.
-func (c *Client) Pair(addr, password string) error {
+// Pair runs `adb pair <addr> <password>` and returns the device guid from
+// adb's output (the device's mdns instance name, stable across ports).
+func (c *Client) Pair(addr, password string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), adbLongTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, c.adbPath, "pair", addr, password)
 	platform.HideConsole(cmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("adb pair %s: %s (%w)", addr, string(out), err)
+		return "", fmt.Errorf("adb pair %s: %s (%w)", addr, string(out), err)
 	}
 	outStr := string(out)
 	if !strings.Contains(outStr, "Successfully paired") {
-		return fmt.Errorf("adb pair %s: unexpected output: %s", addr, outStr)
+		return "", fmt.Errorf("adb pair %s: unexpected output: %s", addr, outStr)
 	}
-	return nil
+	return parsePairGuid(outStr), nil
 }
 
-// Connect runs `adb connect <addr>`.
+// parses "Successfully paired to <ip:port> [guid=<guid>]"; "" when absent.
+func parsePairGuid(out string) string {
+	_, after, ok := strings.Cut(out, "[guid=")
+	if !ok {
+		return ""
+	}
+	guid, _, ok := strings.Cut(after, "]")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(guid)
+}
+
+// DeviceStates returns serial -> state ("device", "offline", "unauthorized",
+// ...) from raw `adb devices`, including transports GetDevices filters out.
+func (c *Client) DeviceStates() map[string]string {
+	ctx, cancel := context.WithTimeout(context.Background(), adbTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.adbPath, "devices")
+	platform.HideConsole(cmd)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	return parseDeviceStates(string(out))
+}
+
+// parseDeviceStates handles both plain and -l output (-l pads with spaces,
+// not tabs, so splitting on whitespace is the only format-safe option).
+// multi word statuses like "no permissions (verify udev rules)" truncate to
+// their first word; that's fine because callers only match the single word
+// states "device" and "offline".
+func parseDeviceStates(out string) map[string]string {
+	states := make(map[string]string)
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		// skip the "List of devices attached" header and "* daemon ..." banners
+		if len(fields) < 2 || fields[0] == "List" || strings.HasPrefix(fields[0], "*") {
+			continue
+		}
+		states[fields[0]] = fields[1]
+	}
+	return states
+}
+
+// TransportState returns the raw `adb devices` state for a serial, or "" when absent.
+func (c *Client) TransportState(serial string) string {
+	return c.DeviceStates()[serial]
+}
+
+// DropTransport disconnects a serial and waits out adb's asynchronous
+// transport removal so the next connect does a fresh handshake.
+func (c *Client) DropTransport(serial string) {
+	_ = c.Disconnect(serial)
+	// overall deadline, not a fixed poll count: each query has its own 10s
+	// timeout, so counting iterations could block for minutes when adb hangs
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		// a nil snapshot means the query failed, not that the transport
+		// is gone; keep polling rather than report success
+		if states := c.DeviceStates(); states != nil {
+			if _, ok := states[serial]; !ok {
+				return
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// MdnsConnectAddr returns the ip:port that adb's own mdns resolver holds for
+// the _adb-tls-connect service of the given guid instance, or "". adb's
+// resolver sees announcements our zeroconf browse can miss (multi-nic
+// windows), so this is the reliable source for the connect port after pairing.
+func (c *Client) MdnsConnectAddr(guid string) string {
+	if guid == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), adbTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.adbPath, "mdns", "services")
+	platform.HideConsole(cmd)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return parseMdnsConnectAddr(string(out), guid)
+}
+
+// parses `adb mdns services` lines ("<instance>\t<service>\t<ip:port>") for
+// the connect-service address of the given guid instance.
+func parseMdnsConnectAddr(out, guid string) string {
+	if guid == "" {
+		return ""
+	}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || !strings.Contains(fields[1], "_adb-tls-connect") {
+			continue
+		}
+		// the instance name is the bare guid; anchor on the "." so a guid
+		// that is a prefix of another device's guid can't false-match
+		instance := fields[0]
+		if (instance == guid || strings.HasPrefix(instance, guid+".")) && isIPPort(fields[2]) {
+			return fields[2]
+		}
+	}
+	return ""
+}
+
+// Connect runs `adb connect <addr>`. Returns ErrAlreadyConnected when adb
+// reused an existing transport instead of handshaking.
 func (c *Client) Connect(addr string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), adbTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, c.adbPath, "connect", addr)
 	platform.HideConsole(cmd)
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("adb connect %s: %s (%w)", addr, string(out), err)
-	}
-	// adb exits 0 even when the target port is closed 
-	// (e.g. "cannot connect to X:Y: No connection could be made...")
-	// we just detect success positively instead.
 	outStr := strings.TrimSpace(string(out))
-	if !strings.Contains(outStr, "connected to") {
-		return fmt.Errorf("adb connect %s: %s", addr, outStr)
+	slog.Debug("adb connect", "addr", addr, "output", outStr, "error", err)
+	if err != nil {
+		return fmt.Errorf("adb connect %s: %s (%w)", addr, outStr, err)
 	}
-	return nil
+	// adb exits 0 even on failure ("cannot connect to X:Y: ..."),
+	// so detect outcomes positively
+	switch {
+	case strings.Contains(outStr, "already connected to"):
+		return ErrAlreadyConnected
+	case strings.Contains(outStr, "connected to"):
+		return nil
+	}
+	return fmt.Errorf("adb connect %s: %s", addr, outStr)
 }
 
 // Disconnect runs `adb disconnect <addr>`.
@@ -266,17 +401,4 @@ func (c *Client) Disconnect(addr string) error {
 		return fmt.Errorf("adb disconnect %s: %w", addr, err)
 	}
 	return nil
-}
-
-// VerifyConnection checks if a device is actually reachable by running a shell command.
-func (c *Client) VerifyConnection(serial string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), adbTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, c.adbPath, "-s", serial, "shell", "echo", "ok")
-	platform.HideConsole(cmd)
-	out, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(string(out)) == "ok"
 }

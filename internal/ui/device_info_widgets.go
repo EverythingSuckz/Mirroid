@@ -171,14 +171,20 @@ func buildInfoPill(icon fyne.Resource, text string, pillColor color.Color) fyne.
 	return container.New(&badgeLayout{padX: pillPadX, padY: badgePadY}, bg, row)
 }
 
-// connTypeLabel returns "Wi-Fi" or "USB" based on whether the serial looks
-// like an IP:port wireless target. Used by both the device list and the side
-// panel hero so the two surfaces stay consistent.
+// connTypeLabel returns "Wi-Fi" or "USB" for the device list and side panel hero.
 func connTypeLabel(serial string) string {
-	if strings.Contains(serial, ":") {
+	if adb.IsWireless(serial) {
 		return "Wi-Fi"
 	}
 	return "USB"
+}
+
+// the raw mdns instance serial means nothing to users; show the ip when known
+func displayAddr(d adb.Device) string {
+	if adb.IsInstanceSerial(d.Serial) && d.Host != "" {
+		return d.Host
+	}
+	return d.Serial
 }
 
 func batteryStatusColor(status adb.BatteryStatus) color.Color {

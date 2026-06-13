@@ -235,10 +235,6 @@ func (dip *DeviceInfoPanel) cancelInflightLocked() {
 	}
 }
 
-func (dip *DeviceInfoPanel) RefreshActions() {
-	fyne.Do(dip.refreshActionsLocked)
-}
-
 // must be called on the fyne ui thread
 func (dip *DeviceInfoPanel) refreshActionsLocked() {
 	serial := dip.currentSerial
@@ -424,7 +420,11 @@ func (dip *DeviceInfoPanel) newInfoView(serial string, info adb.DeviceInfo) *inf
 func (v *infoView) apply(info adb.DeviceInfo) {
 	v.currentDeviceID = info.DeviceID
 	v.heroName.Set(strings.TrimSpace(info.Manufacturer + " " + info.Model))
-	v.heroAddress.Set(info.Serial + "  ·  " + connTypeLabel(v.serial))
+	addr := info.Serial
+	if adb.IsInstanceSerial(addr) && info.IPAddress != "" && info.IPAddress != "-" {
+		addr = info.IPAddress
+	}
+	v.heroAddress.Set(addr + "  ·  " + connTypeLabel(v.serial))
 
 	brandRes := icons.BrandIcon(info.Manufacturer)
 	brandClr, hasBrandClr := icons.BrandColor(info.Manufacturer)

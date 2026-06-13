@@ -15,30 +15,37 @@ import (
 	"mirroid/internal/adb"
 )
 
+const scanHintMsg = "Still scanning... check the phone is in pairing mode and on the same Wi-Fi network."
+
 // PairingWindow manages the independent pairing window.
 type PairingWindow struct {
 	app    *App
 	window fyne.Window
 
+	// cancelled when the window closes
+	winCtx    context.Context
+	winCancel context.CancelFunc
+
+	// supersedes the previous session's claim on status bar + spinner
+	sessionCancel context.CancelFunc
+
 	statusLabel *widget.Label
 	activity    *widget.Activity
 
-	qrImage  *canvas.Image
-	qrCancel context.CancelFunc
-
-	codeCancel context.CancelFunc
+	qrImage *canvas.Image
 }
 
 // ShowPairingWindow creates and shows the independent pairing window.
-// Returns the window reference so callers can track it if needed.
 func ShowPairingWindow(a *App) fyne.Window {
-	// clear the blocklist (user is intentionally re-pairing)
-	a.ignoredAddrs.Range(func(key, _ any) bool {
-		a.ignoredAddrs.Delete(key)
-		return true
-	})
+	// singleton: a second window would also race pairingActive on close
+	if a.pairingWin != nil {
+		a.pairingWin.RequestFocus()
+		return a.pairingWin
+	}
+	a.pairingActive.Store(true)
 
 	pw := &PairingWindow{app: a}
+	pw.winCtx, pw.winCancel = context.WithCancel(context.Background())
 
 	pw.window = a.fyneApp.NewWindow("Pair Device")
 
@@ -57,10 +64,8 @@ func ShowPairingWindow(a *App) fyne.Window {
 	tabs.SetTabLocation(container.TabLocationTop)
 	tabs.OnSelected = func(ti *container.TabItem) {
 		if ti.Text == "QR Code" {
-			pw.stopCodeScan()
 			pw.startQRSession()
 		} else {
-			pw.stopQRSession()
 			pw.startCodeScan()
 		}
 	}
@@ -77,9 +82,11 @@ func ShowPairingWindow(a *App) fyne.Window {
 	pw.window.SetContent(content)
 	pw.window.Resize(fyne.NewSize(650, 400))
 	pw.window.SetOnClosed(func() {
-		pw.stopQRSession()
-		pw.stopCodeScan()
+		a.pairingWin = nil
+		a.pairingActive.Store(false)
+		pw.winCancel()
 	})
+	a.pairingWin = pw.window
 
 	pw.window.Show()
 	pw.startQRSession()
@@ -120,7 +127,7 @@ func (pw *PairingWindow) buildCodeTab() fyne.CanvasObject {
 }
 
 func (pw *PairingWindow) startQRSession() {
-	pw.stopQRSession()
+	session := pw.newSession()
 
 	serviceName := fmt.Sprintf("mirroid-%s", randomDigits(6))
 	password := randomDigits(8)
@@ -142,54 +149,76 @@ func (pw *PairingWindow) startQRSession() {
 	})
 	pw.setStatus("Waiting for phone to scan...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	pw.qrCancel = cancel
-
 	go func() {
-		defer cancel()
-
-		device, err := adb.WaitForNamedPairingDevice(ctx, serviceName, func(s string) {})
+		// scan for as long as this session is current; no give-up timeout
+		hint := time.AfterFunc(scanHintAfter, func() {
+			pw.setStatusIf(session, scanHintMsg)
+		})
+		device, err := adb.WaitForNamedPairingDevice(session, serviceName)
+		hint.Stop()
 		if err != nil {
-			if ctx.Err() == nil {
-				pw.setStatus("Timed out. Switch tabs to retry.")
-				fyne.Do(func() { pw.activity.Stop() })
-			}
-			return
+			return // session superseded or window closed
 		}
 
-		pw.setStatus("Phone detected! Pairing...")
+		pw.setStatusIf(session, "Phone detected! Pairing...")
 		pw.app.logsPanel.Log(fmt.Sprintf("QR: pairing with %s...", device.Addr))
 
-		if err := pw.app.adbClient.Pair(device.Addr, password); err != nil {
-			pw.setStatus("Pairing failed: " + err.Error())
+		guid, err := pw.app.adbClient.Pair(device.Addr, password)
+		if err != nil {
 			pw.app.logsPanel.Log("[ERROR]" + err.Error())
-			fyne.Do(func() { pw.activity.Stop() })
+			// the phone has to scan again anyway, so a fresh QR is the retry
+			pw.ifSession(session, func() {
+				pw.startQRSession()
+				pw.setStatus("Pairing failed - scan the new QR code to retry.")
+			})
 			return
 		}
 
-		pw.app.logsPanel.Log("[OK]Paired!")
-		pw.setStatus("Paired! Connecting...")
-
-		doPostPairConnect(pw.app, device, pw.window)
-
-		fyne.Do(func() {
-			pw.activity.Stop()
-			pw.window.Close()
-		})
-		pw.app.devicePanel.refreshDevices()
+		pw.finishPairing(session, device, guid)
 	}()
 }
 
-func (pw *PairingWindow) stopQRSession() {
-	if pw.qrCancel != nil {
-		pw.qrCancel()
-		pw.qrCancel = nil
+// the watch survives tab switches (window-scoped); ui writes are session-gated
+func (pw *PairingWindow) finishPairing(session context.Context, device *adb.MdnsDevice, guid string) {
+	pw.app.logsPanel.Log("[OK]Paired!")
+	// pairing is an explicit "i want this device": unblock it, and only it
+	ip := parseHostFromAddr(device.Addr)
+	pw.app.ignoredAddrs.Range(func(key, _ any) bool {
+		if k, ok := key.(string); ok && parseHostFromAddr(k) == ip {
+			pw.app.ignoredAddrs.Delete(key)
+		}
+		return true
+	})
+	pw.setStatusIf(session, "Paired! Connecting...")
+
+	serial := doPostPairConnect(pw.winCtx, pw.app, device, guid, func(s string) {
+		pw.setStatusIf(session, s)
+	})
+	if serial == "" {
+		return // window closed
 	}
-	fyne.Do(func() { pw.activity.Stop() })
+
+	// close immediately: the device is up, don't make the user wait on the
+	// bookkeeping below. closing unconditionally (not session-gated) keeps a
+	// mid-connect tab switch from leaving the window open forever.
+	fyne.Do(func() {
+		pw.activity.Stop()
+		pw.window.Close()
+	})
+
+	// lift an alias block left from a prior disconnect of this device. the
+	// block is keyed by hardware id, so it needs a getprop roundtrip that can
+	// hang on a just-connected transport; only pay it when a block exists.
+	if pw.app.hasIgnoredDeviceID() {
+		if devID := pw.app.adbClient.GetDeviceID(serial); devID != "" {
+			pw.app.ignoredAddrs.Delete("devid:" + devID)
+		}
+	}
+	pw.app.devicePanel.refreshDevices()
 }
 
 func (pw *PairingWindow) startCodeScan() {
-	pw.stopCodeScan()
+	session := pw.newSession()
 
 	fyne.Do(func() {
 		pw.activity.Start()
@@ -198,42 +227,26 @@ func (pw *PairingWindow) startCodeScan() {
 	pw.setStatus("Scanning for devices...")
 	pw.app.logsPanel.Log("Code: scanning for pairing devices...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	pw.codeCancel = cancel
-
 	go func() {
-		defer cancel()
-
-		device, err := adb.WaitForPairingDevice(ctx, func(s string) {
-			pw.setStatus(s)
+		// scan for as long as this session is current; no give-up timeout
+		hint := time.AfterFunc(scanHintAfter, func() {
+			pw.setStatusIf(session, scanHintMsg)
 		})
-
+		device, err := adb.WaitForPairingDevice(session)
+		hint.Stop()
 		if err != nil {
-			if ctx.Err() == nil {
-				pw.setStatus("No device found. Switch tabs to retry.")
-				pw.app.logsPanel.Log("[ERROR]Code scan: " + err.Error())
-			}
-			fyne.Do(func() { pw.activity.Stop() })
-			return
+			return // session superseded or window closed
 		}
 
 		pw.app.logsPanel.Log(fmt.Sprintf("Found %s at %s", device.Name, device.Addr))
-		fyne.Do(func() {
+		pw.ifSession(session, func() {
 			pw.activity.Stop()
-			pw.showCodeEntryDialog(device)
+			pw.showCodeEntryDialog(session, device)
 		})
 	}()
 }
 
-func (pw *PairingWindow) stopCodeScan() {
-	if pw.codeCancel != nil {
-		pw.codeCancel()
-		pw.codeCancel = nil
-	}
-	fyne.Do(func() { pw.activity.Stop() })
-}
-
-func (pw *PairingWindow) showCodeEntryDialog(device *adb.MdnsDevice) {
+func (pw *PairingWindow) showCodeEntryDialog(session context.Context, device *adb.MdnsDevice) {
 	pw.setStatus(fmt.Sprintf("Found %s --enter the code", device.Name))
 
 	codeEntry := widget.NewEntry()
@@ -265,26 +278,49 @@ func (pw *PairingWindow) showCodeEntryDialog(device *adb.MdnsDevice) {
 			pw.setStatus("Pairing...")
 			go func() {
 				pw.app.logsPanel.Log(fmt.Sprintf("Pairing with %s...", device.Addr))
-				if err := pw.app.adbClient.Pair(device.Addr, codeEntry.Text); err != nil {
-					pw.setStatus("Pairing failed: " + err.Error())
+				guid, err := pw.app.adbClient.Pair(device.Addr, codeEntry.Text)
+				if err != nil {
 					pw.app.logsPanel.Log("[ERROR]" + err.Error())
-					fyne.Do(func() { pw.activity.Stop() })
+					// the phone is usually still in pairing mode, so the
+					// rescan reopens the entry dialog
+					pw.ifSession(session, func() {
+						pw.startCodeScan()
+						pw.setStatus("Pairing failed. Check the code, and that the phone is still in pairing mode.")
+					})
 					return
 				}
-				pw.app.logsPanel.Log("[OK]Paired!")
-				pw.setStatus("Paired! Connecting...")
-				doPostPairConnect(pw.app, device, pw.window)
-				fyne.Do(func() {
-					pw.activity.Stop()
-					pw.window.Close()
-				})
-				pw.app.devicePanel.refreshDevices()
+				pw.finishPairing(session, device, guid)
 			}()
 		},
 		pw.window,
 	)
+	codeEntry.OnSubmitted = func(string) { dlg.Submit() }
 	dlg.Resize(fyne.NewSize(350, 160))
 	dlg.Show()
+	pw.window.Canvas().Focus(codeEntry)
+}
+
+// cancelled when a newer session starts or the window closes, so stale
+// goroutines can't stomp the active session's ui. main thread only.
+func (pw *PairingWindow) newSession() context.Context {
+	if pw.sessionCancel != nil {
+		pw.sessionCancel()
+	}
+	ctx, cancel := context.WithCancel(pw.winCtx)
+	pw.sessionCancel = cancel
+	return ctx
+}
+
+func (pw *PairingWindow) ifSession(session context.Context, f func()) {
+	fyne.Do(func() {
+		if session.Err() == nil {
+			f()
+		}
+	})
+}
+
+func (pw *PairingWindow) setStatusIf(session context.Context, s string) {
+	pw.ifSession(session, func() { pw.statusLabel.SetText(s) })
 }
 
 func (pw *PairingWindow) setStatus(s string) {

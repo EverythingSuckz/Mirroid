@@ -20,7 +20,6 @@ const (
 type MdnsDevice struct {
 	Name string
 	Addr string // ip:port
-	Port int
 }
 
 // mdnsAddr extracts an IP:port string from a zeroconf entry,
@@ -57,7 +56,6 @@ func DiscoverDevices(ctx context.Context) ([]MdnsDevice, error) {
 			devices = append(devices, MdnsDevice{
 				Name: entry.Instance,
 				Addr: addr,
-				Port: entry.Port,
 			})
 		}
 	}()
@@ -121,7 +119,6 @@ func DiscoverPairingDevices(ctx context.Context, timeout time.Duration) ([]MdnsD
 			devices = append(devices, MdnsDevice{
 				Name: entry.Instance,
 				Addr: addr,
-				Port: entry.Port,
 			})
 		}
 	}()
@@ -141,9 +138,7 @@ func DiscoverPairingDevices(ctx context.Context, timeout time.Duration) ([]MdnsD
 
 // WaitForPairingDevice blocks until a device in pairing mode is discovered,
 // or until the context expires. Returns the first device found.
-func WaitForPairingDevice(ctx context.Context, onStatus func(string)) (*MdnsDevice, error) {
-	onStatus("Scanning for devices in pairing mode...")
-
+func WaitForPairingDevice(ctx context.Context) (*MdnsDevice, error) {
 	// poll for pairing devices every second
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -167,9 +162,7 @@ func WaitForPairingDevice(ctx context.Context, onStatus func(string)) (*MdnsDevi
 // WaitForNamedPairingDevice browses for a pairing device whose mDNS instance
 // name starts with the given serviceName. This is used for QR pairing: the phone
 // echoes back the service name from the QR code as its mDNS instance name.
-func WaitForNamedPairingDevice(ctx context.Context, serviceName string, onStatus func(string)) (*MdnsDevice, error) {
-	onStatus("Waiting for phone to scan QR code...")
-
+func WaitForNamedPairingDevice(ctx context.Context, serviceName string) (*MdnsDevice, error) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 

@@ -101,7 +101,7 @@ func (r *deviceRow) bind(d adb.Device, status model.DeviceStatus, selected, chec
 
 	r.addrTxt.Color = theme.Color(theme.ColorNamePlaceHolder)
 	r.addrTxt.TextSize = theme.Size(theme.SizeNameCaptionText)
-	r.addrTxt.Text = d.Serial + "  ·  " + connTypeLabel(d.Serial)
+	r.addrTxt.Text = displayAddr(d) + "  ·  " + connTypeLabel(d.Serial)
 	r.addrTxt.Refresh()
 
 	r.statusSlot.Objects = []fyne.CanvasObject{

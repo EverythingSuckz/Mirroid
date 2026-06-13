@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -45,6 +46,11 @@ type App struct {
 
 	// addresses explicitly disconnected by the user -- mDNS won't auto-reconnect these.
 	ignoredAddrs sync.Map
+
+	// true while the pairing window is open; the mDNS watcher stays hands-off
+	// so the pairing flow is the only thing connecting to the phone
+	pairingActive atomic.Bool
+	pairingWin    fyne.Window // singleton pairing window; main thread only
 
 	// ui panels
 	devicePanel     *DevicePanel
@@ -181,13 +187,30 @@ func (a *App) ignoreDevice(serial, devID string) {
 	}
 }
 
+// hasIgnoredDeviceID reports whether any hardware-id alias is on the blocklist.
+func (a *App) hasIgnoredDeviceID() bool {
+	found := false
+	a.ignoredAddrs.Range(func(key, _ any) bool {
+		if k, ok := key.(string); ok && strings.HasPrefix(k, "devid:") {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
 // disconnectAliases disconnects remaining ADB entries that share a hardware
 // device ID with the given set, and stores their serials in ignoredAddrs.
 func (a *App) disconnectAliases(devIDs map[string]bool) {
 	if len(devIDs) == 0 {
 		return
 	}
-	remaining, _ := a.adbClient.GetDevices()
+	remaining, _, err := a.adbClient.GetDevices()
+	if err != nil {
+		a.logsPanel.Log("[WARN]Alias cleanup skipped: " + err.Error())
+		return
+	}
 	for _, d := range remaining {
 		rid := a.adbClient.GetDeviceID(d.Serial)
 		if rid != "" && devIDs[rid] {
