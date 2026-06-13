@@ -198,18 +198,23 @@ func (pw *PairingWindow) finishPairing(session context.Context, device *adb.Mdns
 	if serial == "" {
 		return // window closed
 	}
-	// the alias block is keyed by hardware id, knowable only now
-	if devID := pw.app.adbClient.GetDeviceID(serial); devID != "" {
-		pw.app.ignoredAddrs.Delete("devid:" + devID)
-	}
 
-	// close unconditionally: the device is connected, the window's job is
-	// done. gating this on the session left the window open (and the mdns
-	// watcher suppressed) forever after a mid-connect tab switch.
+	// close immediately: the device is up, don't make the user wait on the
+	// bookkeeping below. closing unconditionally (not session-gated) keeps a
+	// mid-connect tab switch from leaving the window open forever.
 	fyne.Do(func() {
 		pw.activity.Stop()
 		pw.window.Close()
 	})
+
+	// lift an alias block left from a prior disconnect of this device. the
+	// block is keyed by hardware id, so it needs a getprop roundtrip that can
+	// hang on a just-connected transport; only pay it when a block exists.
+	if pw.app.hasIgnoredDeviceID() {
+		if devID := pw.app.adbClient.GetDeviceID(serial); devID != "" {
+			pw.app.ignoredAddrs.Delete("devid:" + devID)
+		}
+	}
 	pw.app.devicePanel.refreshDevices()
 }
 

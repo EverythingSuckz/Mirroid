@@ -187,6 +187,19 @@ func (a *App) ignoreDevice(serial, devID string) {
 	}
 }
 
+// hasIgnoredDeviceID reports whether any hardware-id alias is on the blocklist.
+func (a *App) hasIgnoredDeviceID() bool {
+	found := false
+	a.ignoredAddrs.Range(func(key, _ any) bool {
+		if k, ok := key.(string); ok && strings.HasPrefix(k, "devid:") {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
 // disconnectAliases disconnects remaining ADB entries that share a hardware
 // device ID with the given set, and stores their serials in ignoredAddrs.
 func (a *App) disconnectAliases(devIDs map[string]bool) {
