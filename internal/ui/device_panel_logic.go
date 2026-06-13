@@ -40,6 +40,7 @@ func (dp *DevicePanel) refreshDevices() {
 
 	// capture old connection state for selected device
 	selectedSerial := dp.lastSelected
+	preMergeSelected := selectedSerial
 	wasConnected := dp.connectedSet[selectedSerial]
 
 	// snapshot before overwriting so we can diff for connect/disconnect toasts
@@ -113,6 +114,14 @@ func (dp *DevicePanel) refreshDevices() {
 				delete(dp.reconnectErrors, oldSerial)
 				dp.reconnectErrors[d.Serial] = errMsg
 			}
+			if t, ok := dp.connectBackoff[oldSerial]; ok {
+				delete(dp.connectBackoff, oldSerial)
+				dp.connectBackoff[d.Serial] = t
+			}
+			if t, ok := dp.zombieSince[oldSerial]; ok {
+				delete(dp.zombieSince, oldSerial)
+				dp.zombieSince[d.Serial] = t
+			}
 			if dp.lastSelected == oldSerial {
 				dp.lastSelected = d.Serial
 				selectedSerial = d.Serial
@@ -169,8 +178,12 @@ func (dp *DevicePanel) refreshDevices() {
 
 	dp.updateList()
 
-	// reload info panel if selected device's connection state changed
-	if selectedSerial != "" && wasConnected != nowConnected && dp.app.deviceInfoPanel != nil {
+	// reload the info panel when the selected device's connection state
+	// changed, OR its serial migrated (instance name <-> ip:port for the same
+	// phone). the panel keeps its own copy of the serial; without this it
+	// renders the now-dead old identity as a "disconnected" ghost.
+	migrated := selectedSerial != "" && selectedSerial != preMergeSelected
+	if selectedSerial != "" && (wasConnected != nowConnected || migrated) && dp.app.deviceInfoPanel != nil {
 		fyne.Do(func() {
 			dp.app.deviceInfoPanel.LoadDeviceInfo(selectedSerial)
 		})
