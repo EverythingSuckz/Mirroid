@@ -24,7 +24,6 @@ const (
 type LogsPanel struct {
 	app      *App
 	logLines []string
-	maxLines int
 	mu       sync.Mutex
 
 	// live log window references
@@ -81,9 +80,7 @@ func (e *readOnlyEntry) TypedShortcut(s fyne.Shortcut) {
 }
 
 func NewLogsPanel() *LogsPanel {
-	return &LogsPanel{
-		maxLines: maxLogLines,
-	}
+	return &LogsPanel{}
 }
 
 func (lp *LogsPanel) SetApp(a *App) {
@@ -109,9 +106,8 @@ func (lp *LogsPanel) Log(text string) {
 
 	lp.mu.Lock()
 	lp.logLines = append(lp.logLines, line)
-	if len(lp.logLines) > lp.maxLines {
-		// sorry old logs, it's time to go. survival of the newest
-		lp.logLines = lp.logLines[len(lp.logLines)-lp.maxLines:]
+	if len(lp.logLines) > maxLogLines {
+		lp.logLines = lp.logLines[len(lp.logLines)-maxLogLines:]
 	}
 	lp.mu.Unlock()
 

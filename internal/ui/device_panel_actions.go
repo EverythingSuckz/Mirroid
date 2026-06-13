@@ -44,7 +44,6 @@ func deviceFriendlyName(d adb.Device) string {
 }
 
 // ReconnectDevice attempts to reconnect a disconnected device.
-// It tracks the reconnecting state, disables buttons, and updates the UI.
 func (dp *DevicePanel) ReconnectDevice(serial string) {
 	dp.mu.Lock()
 	if dp.reconnectingSet[serial] {

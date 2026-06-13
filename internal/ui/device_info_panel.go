@@ -235,10 +235,6 @@ func (dip *DeviceInfoPanel) cancelInflightLocked() {
 	}
 }
 
-func (dip *DeviceInfoPanel) RefreshActions() {
-	fyne.Do(dip.refreshActionsLocked)
-}
-
 // must be called on the fyne ui thread
 func (dip *DeviceInfoPanel) refreshActionsLocked() {
 	serial := dip.currentSerial

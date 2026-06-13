@@ -37,7 +37,7 @@ type DevicePanel struct {
 	connectBackoff  map[string]time.Time // addrs to leave alone until this time
 	zombieSince     map[string]time.Time // offline transports and when first seen
 	lastSelected    string
-	firstSync       bool // true after the first refreshDevices completes
+	firstSync       bool // set after the first refresh; suppresses startup connect/disconnect toasts until then
 	mu              sync.Mutex
 
 	// bulk action buttons - context-sensitive based on checked devices

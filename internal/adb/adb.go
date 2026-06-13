@@ -36,14 +36,6 @@ type Device struct {
 	Host string `json:"host,omitempty"`
 }
 
-// String returns a display-friendly label.
-func (d Device) String() string {
-	if d.Model != "" {
-		return fmt.Sprintf("%s (%s)", d.Model, d.Serial)
-	}
-	return d.Serial
-}
-
 // isIPPort returns true if serial looks like a real IP:port address
 // (as opposed to mDNS service names like "adb-xxx._adb-tls-connect._tcp").
 func isIPPort(serial string) bool {
@@ -58,6 +50,12 @@ func isIPPort(serial string) bool {
 // ("adb-XXXX._adb-tls-connect._tcp") registered by adb's own auto-connect.
 func IsInstanceSerial(serial string) bool {
 	return strings.HasSuffix(serial, "._adb-tls-connect._tcp")
+}
+
+// IsWireless reports whether a serial is a wireless target (ip:port or an
+// mdns instance name) rather than a usb serial.
+func IsWireless(serial string) bool {
+	return strings.Contains(serial, ":") || IsInstanceSerial(serial)
 }
 
 type Client struct {
@@ -87,7 +85,6 @@ func (c *Client) Path() string {
 	return c.adbPath
 }
 
-// GetDevices runs `adb devices -l` and parses the output.
 // GetDevices runs `adb devices -l` once, returning the connected devices
 // plus the full serial -> state map (which also covers offline/unauthorized
 // transports that the device list filters out).
@@ -138,7 +135,7 @@ func (c *Client) GetDevices() ([]Device, map[string]string, error) {
 			host, _, _ = net.SplitHostPort(serial)
 		}
 		source := model.SourceUSB
-		if strings.Contains(serial, ":") || IsInstanceSerial(serial) {
+		if IsWireless(serial) {
 			source = model.SourceWireless
 		}
 

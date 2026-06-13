@@ -36,7 +36,6 @@ type PairingWindow struct {
 }
 
 // ShowPairingWindow creates and shows the independent pairing window.
-// Returns the window reference so callers can track it if needed.
 func ShowPairingWindow(a *App) fyne.Window {
 	// singleton: a second window would also race pairingActive on close
 	if a.pairingWin != nil {
@@ -155,7 +154,7 @@ func (pw *PairingWindow) startQRSession() {
 		hint := time.AfterFunc(scanHintAfter, func() {
 			pw.setStatusIf(session, scanHintMsg)
 		})
-		device, err := adb.WaitForNamedPairingDevice(session, serviceName, func(string) {})
+		device, err := adb.WaitForNamedPairingDevice(session, serviceName)
 		hint.Stop()
 		if err != nil {
 			return // session superseded or window closed
@@ -233,7 +232,7 @@ func (pw *PairingWindow) startCodeScan() {
 		hint := time.AfterFunc(scanHintAfter, func() {
 			pw.setStatusIf(session, scanHintMsg)
 		})
-		device, err := adb.WaitForPairingDevice(session, func(string) {})
+		device, err := adb.WaitForPairingDevice(session)
 		hint.Stop()
 		if err != nil {
 			return // session superseded or window closed

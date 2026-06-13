@@ -171,11 +171,9 @@ func buildInfoPill(icon fyne.Resource, text string, pillColor color.Color) fyne.
 	return container.New(&badgeLayout{padX: pillPadX, padY: badgePadY}, bg, row)
 }
 
-// connTypeLabel returns "Wi-Fi" or "USB" based on whether the serial looks
-// like a wireless target. Used by both the device list and the side panel
-// hero so the two surfaces stay consistent.
+// connTypeLabel returns "Wi-Fi" or "USB" for the device list and side panel hero.
 func connTypeLabel(serial string) string {
-	if strings.Contains(serial, ":") || adb.IsInstanceSerial(serial) {
+	if adb.IsWireless(serial) {
 		return "Wi-Fi"
 	}
 	return "USB"
