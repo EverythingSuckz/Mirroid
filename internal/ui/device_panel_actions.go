@@ -166,7 +166,7 @@ func (dp *DevicePanel) OnMdnsDevices(mdnsDevices []adb.MdnsDevice) {
 			// a device saved under its mdns instance serial matches the
 			// announcement by name; connecting by ip repairs its entry
 			for _, d := range dp.devices {
-				if strings.HasPrefix(d.Serial, md.Name) {
+				if d.Serial == md.Name || strings.HasPrefix(d.Serial, md.Name+".") {
 					known = true
 					break
 				}

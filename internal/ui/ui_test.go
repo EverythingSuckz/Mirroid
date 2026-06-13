@@ -299,6 +299,8 @@ func TestPairedSerialMatch(t *testing.T) {
 		{"adb-RZ8M81AB-aBcDeF._adb-tls-connect._tcp", "192.168.2.48", "adb-RZ8M81AB-aBcDeF", true},
 		{"adb-RZ8M81AB-aBcDeF._adb-tls-connect._tcp", "192.168.2.48", "", false},
 		{"adb-OTHER-zZzZzZ._adb-tls-connect._tcp", "192.168.2.48", "adb-RZ8M81AB-aBcDeF", false},
+		// guid must match on the "." boundary, not as a bare string prefix
+		{"adb-RZ8M81AB-aBcDeFGH._adb-tls-connect._tcp", "192.168.2.99", "adb-RZ8M81AB-aBcDeF", false},
 		{"ABCD1234", "192.168.2.48", "adb-RZ8M81AB-aBcDeF", false}, // usb serial
 		{"[fe80::1]:40001", "fe80::1", "", true},
 	}

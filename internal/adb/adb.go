@@ -356,7 +356,10 @@ func parseMdnsConnectAddr(out, guid string) string {
 		if len(fields) < 3 || !strings.Contains(fields[1], "_adb-tls-connect") {
 			continue
 		}
-		if (fields[0] == guid || strings.HasPrefix(fields[0], guid)) && isIPPort(fields[2]) {
+		// the instance name is the bare guid; anchor on the "." so a guid
+		// that is a prefix of another device's guid can't false-match
+		instance := fields[0]
+		if (instance == guid || strings.HasPrefix(instance, guid+".")) && isIPPort(fields[2]) {
 			return fields[2]
 		}
 	}

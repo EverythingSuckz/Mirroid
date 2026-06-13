@@ -140,9 +140,10 @@ func doPostPairConnect(ctx context.Context, a *App, device *adb.MdnsDevice, guid
 	}
 }
 
-// matches ip:port serials by host, mdns instance serials by guid prefix
+// matches ip:port serials by host, mdns instance serials by guid (anchored on
+// the "." boundary so one device's guid can't prefix-match another's)
 func pairedSerialMatch(serial, ip, guid string) bool {
-	if guid != "" && strings.HasPrefix(serial, guid) {
+	if guid != "" && (serial == guid || strings.HasPrefix(serial, guid+".")) {
 		return true
 	}
 	host, _, err := net.SplitHostPort(serial)
